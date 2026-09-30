@@ -19,7 +19,8 @@ const examples = [
   ['sniper', 'Sniper', '한쪽 눈을 감아 조준하고 눈을 떠서 발사', '#192c29'],
   ['earth', '동물의 숲', '별 사이 행성에서 함께 사는 동물 친구들', '#b4acd9'],
   ['money', 'MONEY RAIN', '몸과 손 위로 떨어지고 쌓이는 돈', '#355d43'],
-  ['body-fx', 'BODY POINT CLOUD', 'Melted Spectrum FX · 검지와 중지 교차로 인물 투명화', '#281240'],
+  ['body-fx', 'BODY POINT CLOUD', '작은 흰색 입자로 채운 몸 · 움직임의 잔상', '#000000'],
+  ['afterglow', 'AFTERGLOW', '손끝에서 피어나는 불꽃놀이', '#000000'],
 ] as const
 
 export function setupExampleGallery(root:HTMLElement,open:(name:string)=>void) {

@@ -1,6 +1,6 @@
 import { FilesetResolver, ImageSegmenter, HandLandmarker } from '@mediapipe/tasks-vision'
 import { BodyMeltedSpectrum } from './body-melt'
-import { CrossedFingers } from './body-cross'
+import { FaceSwipe, type FaceRegion } from './body-swipe'
 import { MoneyRain, moneyCatchers, type Catcher } from './money-rain'
 
 export function setupBodyExample(root: HTMLElement, moneyMode = false) {
@@ -10,8 +10,11 @@ export function setupBodyExample(root: HTMLElement, moneyMode = false) {
   const sample = document.createElement('canvas'), sc = sample.getContext('2d', { willReadFrequently: true })!
   const money = moneyMode ? new MoneyRain() : null
   let catchers: Catcher[] = [], lastStep = 0
-  const pattern = moneyMode ? null : new BodyMeltedSpectrum(), crossed = new CrossedFingers()
+  const pattern = moneyMode ? null : new BodyMeltedSpectrum(), swipe = new FaceSwipe()
+  let face:FaceRegion|null=null,faceAt=-Infinity
   let pixels:Uint8ClampedArray=new Uint8ClampedArray(0), transparency=0
+  let emptySince=-1
+  const backgroundButton=root.querySelector<HTMLButtonElement>('#body-background')
   let width = 1, height = 1, dpr = 1, gw = 256, gh = 192
   let person = new Float32Array(0), hasBody = false
   let separated = false, hands: HandLandmarker | null = null, handAt = -Infinity, patternAt = -Infinity
@@ -20,19 +23,19 @@ export function setupBodyExample(root: HTMLElement, moneyMode = false) {
   let model: ImageSegmenter | null = null, stream: MediaStream | null = null, disposed = false, loading = false, request = 0, frame = 0
   let renderAt = 0, inferenceAt = -Infinity, videoTime = -1, seenAt = -Infinity, failures = 0
   const lowPower = matchMedia('(pointer: coarse)').matches || navigator.hardwareConcurrency <= 4
-  const clear = () => { person.fill(0); hasBody = false; crossed.reset(); transparency=0; ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height) }
+  const clear = () => { person.fill(0); hasBody = false; swipe.reset();face=null;faceAt=-Infinity; transparency=0; ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height) }
   const resize = () => {
     const box = root.getBoundingClientRect(); width = Math.max(1, box.width); height = Math.max(1, box.height); dpr = Math.min(devicePixelRatio, 1.5)
     canvas.width = Math.round(width*dpr);canvas.height=Math.round(height*dpr)
     gw=lowPower?192:256;gh=Math.max(48,Math.min(384,Math.round(gw*height/width)))
     sample.width=gw;sample.height=gh
-    person=new Float32Array(gw*gh);pixels=new Uint8ClampedArray(0)
+    person=new Float32Array(gw*gh);pixels=new Uint8ClampedArray(0);emptySince=-1
     const pw=lowPower?256:384;pattern?.resize(pw,Math.max(80,Math.min(576,Math.round(pw*height/width))));clear()
   }
   const observer = new ResizeObserver(resize); observer.observe(root); resize()
   const stop = () => {
     request++; stream?.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; model?.close(); model = null; hands?.close(); hands = null; loading = false
-    clear(); money?.reset(); catchers=[]; toggle.disabled = false; toggle.textContent = '카메라 켜기'; toggle.classList.remove('is-active'); inferenceAt = seenAt = handAt = patternAt = -Infinity; videoTime = -1
+    clear(); pattern?.resetBackground();emptySince=-1;separated=false; money?.reset(); catchers=[]; toggle.disabled = false; toggle.textContent = '카메라 켜기'; toggle.classList.remove('is-active'); inferenceAt = seenAt = handAt = patternAt = -Infinity; videoTime = -1
   }
   const start = async () => {
     if (loading || stream || disposed) return
@@ -65,6 +68,9 @@ export function setupBodyExample(root: HTMLElement, moneyMode = false) {
         const mask = result.confidenceMasks?.[0]
         if (!mask) { clear(); return }
         const data = mask.getAsFloat32Array()
+        // Selfie multiclass category 3 is face-skin: reuse segmentation, no extra model.
+        const faceData=pattern?result.confidenceMasks?.[3]?.getAsFloat32Array():null
+        let minX=gw,minY=gh,maxX=0,maxY=0,faceCount=0
         const scale = Math.max(width / video.videoWidth, height / video.videoHeight), vw = video.videoWidth * scale, vh = video.videoHeight * scale
         let count = 0
         for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
@@ -72,11 +78,18 @@ export function setupBodyExample(root: HTMLElement, moneyMode = false) {
           const mx = Math.max(0, Math.min(mask.width - 1, Math.floor(u * mask.width))), my = Math.max(0, Math.min(mask.height - 1, Math.floor(v * mask.height)))
           const i = y * gw + x, confidence = u >= 0 && u < 1 && v >= 0 && v < 1 ? 1 - data[my * mask.width + mx] : 0
           person[i] = Math.max(0, Math.min(1, (confidence - .45) / .3)); count += person[i] > .5 ? 1 : 0
+          if(faceData&&faceData[my*mask.width+mx]>.65){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);faceCount++}
         }
+        if(faceCount>12){face={x:(minX+maxX)/2/gw,y:(minY+maxY)/2/gh,width:(maxX-minX+1)/gw,height:(maxY-minY+1)/gh};faceAt=stamp}
+        else if(stamp-faceAt>650)face=null
         hasBody = count > 12; seenAt = stamp
         drawCamera(sc, gw, gh)
         if(pattern)pixels = sc.getImageData(0, 0, gw, gh).data
-        const message = hasBody ? (moneyMode ? '사람 인식 중 · V 또는 양손을 모아 돈을 받으세요.' : separated||crossed.active ? '투명화 중 · 손가락을 풀거나 투명화 버튼을 해제해 주세요.' : '사람 인식 중 · 검지와 중지를 교차해 보세요.') : '카메라에 얼굴과 몸이 보이도록 서 주세요.'
+        if(pattern){
+          if(count===0){if(emptySince<0)emptySince=stamp}else emptySince=-1
+          if(!pattern.backgroundReady&&emptySince>=0&&stamp-emptySince>900)pattern.captureBackground(pixels)
+        }
+        const message = pattern&&!pattern.backgroundReady?'배경 저장 대기 · 카메라를 고정하고 화면 밖으로 잠시 비켜 주세요.':hasBody ? (moneyMode ? '사람 인식 중 · V 또는 양손을 모아 돈을 받으세요.' : separated ? '리퀴드 투명화 중 · 해제 버튼으로 돌아올 수 있어요.' : '사람 인식 중 · 얼굴 앞에서 손을 화면 오른쪽 → 왼쪽으로 쓸어 주세요.') : pattern?'배경 저장 완료 · 화면으로 돌아와 얼굴 앞에서 손을 쓸어 주세요.':'카메라에 얼굴과 몸이 보이도록 서 주세요.'
         if (status.textContent !== message) status.textContent = message
       } finally { result.close() }
       failures = 0
@@ -104,10 +117,17 @@ export function setupBodyExample(root: HTMLElement, moneyMode = false) {
           if(money){
             const scale=Math.max(width/video.videoWidth,height/video.videoHeight),vw=video.videoWidth*scale,vh=video.videoHeight*scale
             catchers=moneyCatchers(landmarks).map(c=>({x:((width-vw)/2+(1-c.x)*vw)/width,y:((height-vh)/2+c.y*vh)/height,width:c.width*vw/width}))
-          }else crossed.update(landmarks,stamp)
+          }else{
+            const scale=Math.max(width/video.videoWidth,height/video.videoHeight),vw=video.videoWidth*scale,vh=video.videoHeight*scale
+            const palms=landmarks.filter(h=>h.length>=21).map(h=>{
+              const x=(h[0].x+h[5].x+h[9].x+h[13].x+h[17].x)/5,y=(h[0].y+h[5].y+h[9].y+h[13].y+h[17].y)/5
+              return {x:((width-vw)/2+(1-x)*vw)/width,y:((height-vh)/2+y*vh)/height}
+            })
+            if(pattern?.backgroundReady&&swipe.update(palms,stamp-faceAt<650?face:null,stamp))separated=true
+          }
           handAt=stamp
         }
-        catch { crossed.reset();catchers=[];handAt=stamp }
+        catch { swipe.reset();catchers=[];handAt=stamp }
       } else segment(stamp)
     }
     if (!stream || video.readyState < 2) return
@@ -121,12 +141,12 @@ export function setupBodyExample(root: HTMLElement, moneyMode = false) {
       return
     }
     if(pattern){
-      if(stamp-handAt>350)crossed.reset()
-      const transparent=separated||crossed.active
+      if(stamp-handAt>350)swipe.reset()
+      const transparent=separated
       split.setAttribute('aria-pressed',String(transparent));split.textContent=separated?'투명화 해제':'사람 투명화'
       if(stamp-patternAt>(lowPower?80:50)){
         const dt=Number.isFinite(patternAt)?Math.min(100,stamp-patternAt):50
-        transparency+=((transparent&&hasBody?1:0)-transparency)*(1-Math.exp(-dt/180))
+        transparency+=((transparent&&hasBody&&pattern.backgroundReady?1:0)-transparency)*(1-Math.exp(-dt/180))
         pattern.render(pixels,person,gw,gh,transparency,stamp);patternAt=stamp
       }
       ctx.drawImage(pattern.canvas,0,0,width,height)
@@ -134,6 +154,10 @@ export function setupBodyExample(root: HTMLElement, moneyMode = false) {
   }
   toggle.addEventListener('click', () => { if (stream) { stop(); status.textContent = '카메라 중지 · 효과를 중지했어요.' } else void start() }, { signal: events.signal })
   split.addEventListener('click',separate,{signal:events.signal})
+  backgroundButton?.addEventListener('click',()=>{
+    pattern?.resetBackground();emptySince=-1;transparency=0;separated=false;swipe.reset()
+    status.textContent='배경 저장 대기 · 카메라를 고정하고 화면 밖으로 잠시 비켜 주세요.'
+  },{signal:events.signal})
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { cancelAnimationFrame(frame); frame = 0; stream?.getVideoTracks().forEach(t => { t.enabled = false }); clear() }
     else if (!disposed) { stream?.getVideoTracks().forEach(t => { t.enabled = true }); if (!frame) frame = requestAnimationFrame(draw) }

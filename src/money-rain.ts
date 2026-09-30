@@ -21,6 +21,7 @@ export class MoneyRain {
   collected=0
   private spawn=0
   private sprite:HTMLCanvasElement|null=null
+  private loads=new Uint16Array(4)
   reset(){this.bills.length=0;this.pile.fill(0);this.spawn=0;this.collected=0}
   update(dt:number,mask:Float32Array,w:number,h:number,catchers:Catcher[],random=Math.random){
     dt=Math.min(.05,dt)
@@ -28,9 +29,10 @@ export class MoneyRain {
     for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(mask[y*w+x]>.5){if(top===h)top=y;if(y<top+5){left=Math.min(left,x);right=Math.max(right,x)}}
     const solid=(x:number,y:number)=>y>=0&&y<h&&x>=0&&x<w&&mask[Math.floor(y)*w+Math.floor(x)]>.5
     const halfWidth=Math.max(1.5,w*.016),halfHeight=halfWidth*.47
-    if(top<h){this.spawn+=dt*14;while(this.spawn>=1&&this.bills.length<320){this.spawn--;this.bills.push({x:Math.max(2,Math.min(w-2,(left+right)/2+(random()-.5)*Math.max(12,right-left+24))),y:-3-random()*6,vx:(random()-.5)*7,vy:8,angle:random()*6,catcher:-1,offset:0,level:0})}}else this.spawn=0
+    if(top<h){this.spawn+=dt*14;while(this.spawn>=1&&this.bills.length<320){this.spawn--;this.bills.push({x:Math.max(2,Math.min(w-2,(left+right)/2+(random()-.5)*Math.max(12,right-left+24))),y:-3-random()*6,vx:(random()-.5)*7,vy:10,angle:random()*6,catcher:-1,offset:0,level:0})}}else this.spawn=0
     this.spawn=Math.min(1,this.spawn)
-    const loads=new Uint16Array(catchers.length)
+    if(this.loads.length<catchers.length)this.loads=new Uint16Array(catchers.length)
+    const loads=this.loads;loads.fill(0)
     for(const b of this.bills)if(b.catcher>=0&&catchers[b.catcher])loads[b.catcher]++
     for(let bi=this.bills.length-1;bi>=0;bi--){
       const b=this.bills[bi],held=catchers[b.catcher]
@@ -38,7 +40,7 @@ export class MoneyRain {
       b.catcher=-1
       // A moving body can overtake a bill; project it back above the silhouette.
       if(solid(b.x,b.y)){let y=Math.floor(b.y);while(y>0&&solid(b.x,y))y--;b.y=y-1;b.vy=-4}
-      b.vy=Math.min(65,b.vy+35*dt);b.vx*=Math.exp(-dt*.25)
+      b.vy=Math.min(80,b.vy+44*dt);b.vx*=Math.exp(-dt*.25)
       const steps=Math.max(1,Math.ceil(Math.abs(b.vy)*dt/.6))
       for(let k=0;k<steps;k++){
         const nx=Math.max(1,Math.min(w-2,b.x+b.vx*dt/steps)),ny=b.y+b.vy*dt/steps

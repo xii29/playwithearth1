@@ -27,6 +27,7 @@ try {
   await page.goto('https://gallery.test'+base); await settled()
   assert.equal(await page.locator('.clock-number').count(),32)
   assert.equal(await page.locator('.clock-hands').count(),0,'Clock hands removed')
+  assert.equal(await page.locator('.clock-number[data-slot="17"]').getAttribute('data-gallery-example'),'afterglow','Example 18 is AFTERGLOW')
   const mapping=await page.locator('.clock-number').evaluateAll(nodes=>nodes.map(n=>n.dataset.galleryExample))
   assert.equal(new Set(mapping).size,32,'Every example has its own number')
   assert.deepEqual(await page.locator('.clock-number span').allTextContents(),Array.from({length:32},(_,i)=>String(i+1)))

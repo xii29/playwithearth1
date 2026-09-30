@@ -28,8 +28,12 @@
 .body-guide { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); width: min(680px, calc(100% - 32px)); padding: 14px 20px; border-radius: 18px; text-align: center; background: #0c1e30d9; pointer-events: none; }
 .body-guide p { font-size: 12px; margin: 0 0 6px; }.body-guide small { font-size: 10px; color: #b8ccd9; }
 .body-point-cloud { background: #000; color: #fff; }
+.afterglow-example {background:#000}
+.afterglow-panel {position:absolute;z-index:2;top:146px;right:24px;width:min(250px,calc(100% - 48px));padding:14px;border:1px solid #ffffff33;border-radius:16px;background:#111e;color:#eee;font-size:12px}
+.afterglow-panel summary {cursor:pointer}.afterglow-panel label{display:block;margin:16px 0 10px}.afterglow-panel select,.afterglow-panel button{background:#222;color:#fff;border:1px solid #555;padding:8px;border-radius:8px}.afterglow-panel p{line-height:1.6;color:#aaa}
 .body-point-cloud .body-guide { background: #111b; }
 .body-point-cloud .body-guide small { color: #aaa; }
+#body-background {pointer-events:auto;display:block;margin:10px auto 0;padding:7px 12px;border:1px solid #ffffff55;border-radius:18px;background:#171717;color:#eee;cursor:pointer;font-size:11px}
 .body-point-cloud #body-camera-toggle { background: #151515cc; color: #eee; border-color: #ffffff40; }
 @media (max-width: 600px) { .body-toolbar { left: 16px; top: 140px; gap: 8px; padding: 10px; max-width: calc(100% - 32px); }.body-toolbar strong { font-size: 11px; }.body-guide { bottom: 16px; } }
 .earth-space-edition { --space-panel: #171d39; --space-line: #b3a4f34d; }

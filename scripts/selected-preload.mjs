@@ -4,7 +4,8 @@ const entries = {
   hand: 'hand-tracking', water: 'water-touch', balloon: 'balloon', lab: 'flower-lab',
   rubber: 'rubber-human', shampoo: 'shampoo', doodle: 'doodle-face', travel: 'travel',
   aquarium: 'aquarium', sniper: 'sniper', earth: 'earth-village',
-  'body-fx': 'body-examples',
+  'body-fx': 'body-cloud-example',
+  afterglow: 'body-cloud-example',
   money: 'body-examples',
 }
 

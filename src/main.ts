@@ -1,9 +1,10 @@
 import './style.css'
 import { bodyTemplate } from './body-template'
 import { moneyTemplate } from './money-template'
+import { afterglowTemplate } from './afterglow'
 import { setupCaptureControl } from './capture-control.ts'
 
-type ExampleName = 'home' | 'space' | 'typing' | 'claw' | 'sampler' | 'hand' | 'water' | 'balloon' | 'lab' | 'rubber' | 'shampoo' | 'doodle' | 'travel' | 'aquarium' | 'sniper' | 'earth' | 'body-fx' | 'money'
+type ExampleName = 'home' | 'space' | 'typing' | 'claw' | 'sampler' | 'hand' | 'water' | 'balloon' | 'lab' | 'rubber' | 'shampoo' | 'doodle' | 'travel' | 'aquarium' | 'sniper' | 'earth' | 'body-fx' | 'money' | 'afterglow'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 
@@ -47,6 +48,7 @@ const exampleTemplates: Record<ExampleName, () => string> = {
   home: () => '<main class="example-gallery" aria-label="인터랙션 플레이그라운드"></main>',
   'body-fx': () => bodyTemplate(),
   money: () => moneyTemplate(),
+  afterglow: () => afterglowTemplate(),
   earth: () => `
     <main class="earth-example example-view earth-space-edition">
       <div class="earth-space-logo"><img src="${import.meta.env.BASE_URL}logo.webp" alt="모여봐요 동물의 숲" width="639" height="246" draggable="false"></div>
@@ -607,9 +609,9 @@ async function showExample(name: ExampleName) {
     const { setupEarthVillage } = await import('./earth-village.ts')
     if (isCurrent()) disposeMountedExample = setupEarthVillage(document.querySelector<HTMLElement>('.earth-example')!)
   }
-  if (name === 'body-fx') {
-    const { setupBodyExample } = await import('./body-examples.ts')
-    if (isCurrent()) disposeMountedExample = setupBodyExample(stage.querySelector<HTMLElement>('.body-example')!)
+  if (name === 'body-fx' || name === 'afterglow') {
+    const { setupBodyCloud } = await import('./body-cloud-example.ts')
+    if (isCurrent()) disposeMountedExample = setupBodyCloud(stage.querySelector<HTMLElement>('.body-example')!,name==='afterglow')
   }
   if (name === 'money') {
     const { setupBodyExample } = await import('./body-examples.ts')
