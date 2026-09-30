@@ -97,7 +97,7 @@ export function setupSampler(root: HTMLElement) {
     for (const extension of EXTENSIONS) {
       if (disposed) return
       try {
-        const response = await fetch(`/sounds/${key}.${extension}`)
+        const response = await fetch(`${import.meta.env.BASE_URL}sounds/${key}.${extension}`)
         if (!response.ok || (response.headers.get('content-type') ?? '').includes('text/html')) continue
         const buffer = await context.decodeAudioData(await response.arrayBuffer())
         if (disposed) return

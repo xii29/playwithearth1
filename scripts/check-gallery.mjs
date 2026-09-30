@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve, extname } from 'node:path'
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
+const base=process.env.PAGES_BASE_PATH || '/'
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) })
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -10,8 +11,9 @@ try {
   await page.route('https://gallery.test/**', async route => {
     const pathname = new URL(route.request().url()).pathname
     requests.push(pathname)
+    if(!pathname.startsWith(base))return route.fulfill({status:404,body:'Outside deployment base'})
     try {
-      const file = resolve('dist', `.${pathname === '/' ? '/index.html' : pathname}`)
+      const file = resolve('dist', pathname === base ? 'index.html' : pathname.slice(base.length))
       await route.fulfill({ body: await readFile(file), contentType: ({ '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' })[extname(file)] || 'application/octet-stream' })
     } catch { await route.fulfill({ status: 404, body: '' }) }
   })
@@ -22,7 +24,7 @@ try {
     navigator.mediaDevices.getUserMedia = () => { window.cameraRequests++; return Promise.reject(new Error('Unexpected camera')) }
   })
   const settled = () => page.waitForFunction(() => !document.querySelector('#example-stage').hasAttribute('aria-busy'))
-  await page.goto('https://gallery.test/'); await settled()
+  await page.goto('https://gallery.test'+base); await settled()
   assert.equal(await page.locator('.clock-number').count(),32)
   assert.equal(await page.locator('.clock-hands').count(),0,'Clock hands removed')
   const mapping=await page.locator('.clock-number').evaluateAll(nodes=>nodes.map(n=>n.dataset.galleryExample))
@@ -53,7 +55,7 @@ try {
   await page.waitForTimeout(1400)
   const frames=await page.evaluate(()=>window.frameRequests);await page.waitForTimeout(300)
   assert((await page.evaluate(()=>window.frameRequests))-frames<3,'Gallery animation rests when idle')
-  await page.goto('https://gallery.test/');await settled();await page.screenshot({path:'/tmp/clock-gallery.png'})
+  await page.goto('https://gallery.test'+base);await settled();await page.screenshot({path:'/tmp/clock-gallery.png'})
   await page.locator('.gallery-open').click()
   await page.waitForFunction(()=>document.querySelector('#app').dataset.activeExample==='space')
   await page.locator('[data-example="home"]').click();await settled()
@@ -62,5 +64,6 @@ try {
   assert(await page.locator('.clock-number').evaluateAll(elements=>elements.every(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})),'Clock fits mobile viewport')
   await page.screenshot({path:'/tmp/clock-gallery-mobile.png'})
   assert.deepEqual(errors,[])
+  assert(requests.every(path=>path.startsWith(base)),'Every resource stays within deployment base')
   console.log('PASS clock gallery: all 32 fixed numbers, name-only center, hover enlargement, all examples reachable, idle scheduling, no camera on home, launch/back, mobile fit.')
 }finally{await browser.close()}

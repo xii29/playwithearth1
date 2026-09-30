@@ -1,8 +1,8 @@
 import { FaceLandmarker, FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 
-const WASM_ROOT = '/mediapipe/wasm'
-const FACE_MODEL = '/mediapipe/models/face_landmarker.task'
-const HAND_MODEL = '/mediapipe/models/hand_landmarker.task'
+const WASM_ROOT = `${import.meta.env.BASE_URL}mediapipe/wasm`
+const FACE_MODEL = `${import.meta.env.BASE_URL}mediapipe/models/face_landmarker.task`
+const HAND_MODEL = `${import.meta.env.BASE_URL}mediapipe/models/hand_landmarker.task`
 const FACE_GRACE = 420
 const HAND_GRACE = 220
 const READY_STABLE_MS = 650

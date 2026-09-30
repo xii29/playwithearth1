@@ -85,6 +85,29 @@ npm run preview
 
 분할 마스크 격자에서 작은 이동 단위로 충돌을 검사하고, 동적으로 관통한 지폐를 신체 밖으로 보정합니다. 최대 320개 이동 지폐와 64개 바닥 축적 구간을 사용하고, 모의 지폐 이미지는 한 번만 그려 재사용합니다. 실제 강체 시뮬레이션이 아닌 경량 2D 충돌이며 손 가림·인식 오차로 받기/충돌이 달라질 수 있습니다. ‘돈 비우기’로 초기화합니다. `scripts/check-money-rain.mjs`에서 충돌·바닥 축적·손 이동 및 해제를 검사합니다.
 
+## GitHub Pages 자동 배포
+
+현재 저장소: `xii29/playwithearth1` · 기본 브랜치: `main`.
+배포 후 주소: **https://xii29.github.io/playwithearth1/** (`#earth`, `#body-fx` 등 예제 직접 링크도 유지).
+
+1. GitHub 저장소 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 선택합니다.
+2. 저장소 Actions가 비활성화되어 있으면 활성화합니다. 조직 정책이 있다면 워크플로에서 쓰는 GitHub 공식 Actions 사용을 허용해야 합니다.
+3. 변경 파일을 커밋하고 `main`으로 push합니다. **Actions → Deploy to GitHub Pages**에서 성공 여부를 확인합니다. 이후 `main` push마다 자동 배포됩니다. 첫 수동 배포는 **Run workflow → main**을 선택합니다.
+4. Pages 화면에서 표시되는 실제 배포 URL을 엽니다. 가능하면 **Enforce HTTPS**를 활성화하고, 브라우저에서 카메라/마이크 사용을 허용합니다. 로컬 mkcert 인증서는 GitHub Pages에 설치하지 않습니다.
+
+`.github/workflows/deploy-pages.yml`이 Node 22에서 `npm ci` → 빌드 → 배포 파일 검사 → `dist` 업로드/배포를 수행합니다. 별도 PAT/Secrets나 `gh-pages` 브랜치는 필요 없습니다. Pages는 미리 활성화해야 하며, 비공개 저장소는 계정 요금제의 Pages 지원 여부를 확인하세요. `github-pages` 환경에 승인 규칙이 있으면 배포를 승인해야 합니다.
+
+Pages가 알려주는 `base_path`를 `PAGES_BASE_PATH`로 전달하므로 저장소 이름 변경/루트 사이트/커스텀 도메인에도 대응합니다. 로컬 개발은 `/` 및 기존 LAN HTTPS 설정을 유지합니다. 인증서·비밀키·node_modules는 업로드하지 않고 `dist`만 배포합니다. `public`의 파일은 모두 공개되므로 개인 사진과 공개 권한이 없는 자료는 push 전에 확인하세요. 주민 저장 데이터는 브라우저와 접속 주소별로 저장되므로 로컬 주소의 데이터가 배포 주소로 자동 이전되지는 않습니다.
+
+로컬에서 배포용 빌드 검사(서버 실행 불필요):
+
+```sh
+PAGES_BASE_PATH=/playwithearth1/ npm run build
+PAGES_BASE_PATH=/playwithearth1/ node scripts/check-pages.mjs
+```
+
+일반 로컬 빌드는 `npm run build`입니다. 기본 경로 빌드와 하위 경로 빌드를 각각 확인했습니다. GitHub에 push/실제 배포는 별도로 진행해야 합니다.
+
 ### BODY POINT CLOUD · Melted Spectrum FX
 
 기존 `#body-fx`의 흑백 패턴 대신 RGB 분리, 유동 왜곡, 블룸을 합성하는 컬러 Melted Spectrum FX를 표시합니다. TouchDesigner 자체 연동이 아닌 브라우저 Canvas 기반 재현입니다. 화면과 마스크는 동일한 cover 좌표를 사용합니다.

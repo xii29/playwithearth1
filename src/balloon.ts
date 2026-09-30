@@ -146,8 +146,8 @@ export function setupBalloon(root: HTMLElement) {
     return asset
   }
   const balloonAssets = [
-    makeBalloonAsset('/balloon/1.png'), makeBalloonAsset('/balloon/2.png'),
-    makeBalloonAsset('/balloon/3.png'), makeBalloonAsset('/balloon/4.png'),
+    makeBalloonAsset(`${import.meta.env.BASE_URL}balloon/1.png`), makeBalloonAsset(`${import.meta.env.BASE_URL}balloon/2.png`),
+    makeBalloonAsset(`${import.meta.env.BASE_URL}balloon/3.png`), makeBalloonAsset(`${import.meta.env.BASE_URL}balloon/4.png`),
   ]
 
   const lowPowerDevice = window.matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 4)

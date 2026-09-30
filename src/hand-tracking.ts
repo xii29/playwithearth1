@@ -3,7 +3,7 @@ import { FaceLandmarker, FilesetResolver, HandLandmarker } from '@mediapipe/task
 const WASM_ROOT = `${import.meta.env.BASE_URL}mediapipe/wasm`
 const MODEL_PATH = `${import.meta.env.BASE_URL}mediapipe/models/hand_landmarker.task`
 const FACE_MODEL_PATH = `${import.meta.env.BASE_URL}mediapipe/models/face_landmarker.task`
-const LEMON_IMAGE_PATHS = ['/lemon.png', '/lemons/lemon.png']
+const LEMON_IMAGE_PATHS = [`${import.meta.env.BASE_URL}lemons/lemon.png`, `${import.meta.env.BASE_URL}lemon.png`]
 
 type Landmark = { x: number; y: number; z: number }
 type Point = { x: number; y: number }
