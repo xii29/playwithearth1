@@ -3,7 +3,7 @@ import type { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { VILLAGE_CLEARING, VILLAGE_HOLE, type createEarthGarden } from './earth-garden'
 import { buildMiniature } from './earth-miniature'
 import { loadResidents, saveResidents, type SavedResident } from './earth-storage'
-import { ANIMAL_NAMES, createAnimal } from './earth-animals'
+import { ANIMAL_NAMES, createAnimal, gyaruTexture } from './earth-animals'
 
 export type Resident = { id: string; name: string; root: THREE.Group; body: THREE.Mesh; normal: THREE.Vector3; direction: THREE.Vector3; phase: number; turnAt: number; radius: number }
 type Options = { root: HTMLElement; canvas: HTMLCanvasElement; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; garden: ReturnType<typeof createEarthGarden>; residents: Resident[]; orient: (r: Resident) => void; busy: () => boolean; changed: () => void }
@@ -20,12 +20,13 @@ export function setupResidentLife({ root, canvas, scene, camera, controls, garde
       <p id="earth-dialogue" role="status"></p>
       <i class="earth-dialogue-marker" aria-hidden="true"></i>
       </div>
-      <div class="earth-conversation-controls">
+      <details class="earth-conversation-controls"><summary>대화 · 꾸미기</summary>
+      <button id="earth-random-chat" type="button">친구와 랜덤 수다 ♡</button>
       <form id="earth-chat"><input aria-label="주민에게 할 말" maxlength="120" placeholder="주민에게 말을 걸어 보세요"><button>보내기</button></form>
       <small>이 기기에서 응답하는 주민 대화 · AI 연결 없음</small>
       <div class="earth-resident-tools"><button id="earth-edit-texture" type="button">텍스처 문지르기</button><button id="earth-rename" type="button">이름 변경</button></div>
       <label id="earth-rename-row" hidden>새 이름 <input id="earth-new-name" maxlength="20"><button id="earth-save-name" type="button">저장</button></label>
-      </div>
+      </details>
     </section>
     <dialog id="earth-texture-dialog" class="earth-texture-dialog">
       <form method="dialog"><strong>텍스처 문지르기</strong><button aria-label="텍스처 편집 닫기">닫기</button></form>
@@ -45,10 +46,27 @@ export function setupResidentLife({ root, canvas, scene, camera, controls, garde
   let drag: { resident: Resident; id: number; x: number; y: number; moved: boolean; valid: boolean; original: THREE.Vector3 } | null = null
   const trips = new Map<Resident, Trip>(), falling = new Map<Resident, number>()
   const originalTextures = new Map<string, HTMLCanvasElement>()
+  const topics=[
+    ['오늘 코디 포인트는 핑크 레오파드야!','완전 찰떡! 난 금빛 귀걸이로 반짝임 추가했어.','우리 꽃길에서 같이 사진 찍자!','좋아, 오늘도 우리다운 스타일로 ♡'],
+    ['딸기 파르페 먹으러 갈래?','좋아! 위에 체리도 꼭 올리자.','산책하고 먹으면 더 맛있겠지?','그럼 꽃길 한 바퀴 돌고 카페로 출발!'],
+    ['오늘 플레이리스트 추천해 줘!','걸을 때 신나는 노래는 어때?','좋아, 나뭇잎도 박자 맞춰 흔들리네.','우리 마을이 작은 무대 같아!'],
+    ['우주인이 놀러 오면 뭐부터 보여 줄까?','우리 꽃밭! 반짝이는 네일도 자랑할래.','같이 셀카 찍으면 대박이겠다.','그럼 내가 제일 귀여운 포즈 알려 줄게 ♡'],
+    ['다음에는 무슨 색 꽃을 심을까?','분홍이랑 노랑! 같이 있으면 기분 좋아져.','그 옆에 작은 피크닉 자리도 만들자.','완전 좋아. 간식은 내가 챙길게!']
+  ]
+  let conversation:{pair:Resident[];lines:string[];line:number;age:number}|null=null,lastTopic=-1
+  const speak=()=>{if(!conversation)return;const speaker=conversation.pair[conversation.line%conversation.pair.length];$('resident-name').textContent=speaker.name;$('dialogue').textContent=conversation.lines[conversation.line]}
+  const startConversation=()=>{
+    if(!selected)return
+    const friends=residents.filter(r=>r!==selected&&!falling.has(r)).sort((a,b)=>a.normal.distanceToSquared(selected!.normal)-b.normal.distanceToSquared(selected!.normal))
+    if(!friends.length){$('dialogue').textContent='친구가 입주하면 같이 수다 떨자 ♡';return}
+    let topic=Math.floor(Math.random()*(topics.length-1));if(topic>=lastTopic)topic++;topic%=topics.length;lastTopic=topic
+    conversation={pair:[selected,friends[0]],lines:topics[topic],line:0,age:0};conversation.pair.forEach(r=>trips.delete(r));speak()
+  }
   let edited: Resident | null = null, painting = false, restoreBrush = false, lastBrush: THREE.Vector2 | null = null
   const undo: ImageData[] = []
   const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), target = new THREE.Vector3(), desired = new THREE.Vector3()
   const on = (target: EventTarget, type: string, callback: EventListener) => target.addEventListener(type, callback, { signal: events.signal })
+  on($('random-chat'),'click',startConversation)
   const texture = (resident: Resident) => (resident.body.material as THREE.MeshStandardMaterial).map as THREE.CanvasTexture
   const textureCanvas = (resident: Resident) => texture(resident).image as HTMLCanvasElement
   const cloneCanvas = (source: HTMLCanvasElement) => {
@@ -64,7 +82,7 @@ export function setupResidentLife({ root, canvas, scene, camera, controls, garde
     const record = assets.get(resident.id)
     const shape = resident.root.userData.shape as HTMLCanvasElement
     const image = textureCanvas(resident).toDataURL('image/png')
-    assets.set(resident.id, { id: resident.id, name: resident.name, normal: resident.normal.toArray(), shape: record?.shape ?? shape.toDataURL('image/png'), texture: image, original: record?.original ?? image })
+    assets.set(resident.id, { id: resident.id, name: resident.name, normal: resident.normal.toArray(), shape: record?.shape ?? shape.toDataURL('image/png'), texture: image, original: record?.original ?? originalTextures.get(resident.id)?.toDataURL('image/png') ?? image,gyaru:!!resident.root.userData.gyaru })
   }
   const persist = () => {
     if (!loaded) return
@@ -75,6 +93,7 @@ export function setupResidentLife({ root, canvas, scene, camera, controls, garde
     void saveResidents(records).catch(() => { if (!disposed) status.textContent = '저장 공간을 사용할 수 없어요. 브라우저 저장 설정을 확인해 주세요.' })
   }
   const leave = () => {
+    conversation=null
     selected = null; panel.hidden = true; roster.value = ''; camera.up.set(0, 1, 0)
     controls.target.set(0, 0, 0); controls.minDistance = 5.2; controls.enabled = !busy()
     const halfFov = THREE.MathUtils.degToRad(camera.fov / 2)
@@ -84,15 +103,18 @@ export function setupResidentLife({ root, canvas, scene, camera, controls, garde
   const focus = (resident: Resident) => {
     if (busy() || falling.has(resident)) return
     selected = resident; panel.hidden = false; roster.value = resident.id
+    ui.querySelector<HTMLDetailsElement>('.earth-conversation-controls')!.open=false
     $('resident-name').textContent = resident.name
     $('dialogue').textContent = `안녕! 나는 ${resident.name}이야. 같이 이 작은 지구를 둘러볼래?`
     $('rename-row').hidden = true; controls.enabled = false; controls.minDistance = .35
+    startConversation()
   }
   on($('unfollow'), 'click', leave)
   on(roster, 'change', () => { const resident = residents.find(r => r.id === roster.value); if (resident) focus(resident) })
   let replyIndex = 0
   on($('chat'), 'submit', event => {
     event.preventDefault(); if (!selected) return
+    conversation=null
     const input = $('chat').querySelector('input')!, message = input.value.trim(); if (!message) return
     const replies = ['꽃이 피는 길을 찾아 걷고 있었어. 너도 같이 갈래?', '여기서 만난 이웃들이 좋아. 오늘은 누구를 만났어?', '가끔은 천천히 걸으며 하늘을 보고 싶어.', '네가 꾸며 준 모습이 마음에 들어. 또 이야기해 줘!']
     const response = /안녕|반가/.test(message) ? `반가워! 내 이름은 ${selected.name}이야.` : /이름/.test(message) ? `나는 ${selected.name}! 네가 지어 준 이름이야.` : /회의|모이/.test(message) ? '주민 회의 버튼을 누르면 공터에서 모두 만날 수 있어!' : /고마|좋아|사랑/.test(message) ? '그렇게 말해 줘서 기뻐. 나도 네가 와서 좋아!' : replies[(replyIndex++ + Math.floor(selected.phase)) % replies.length]
@@ -131,7 +153,7 @@ export function setupResidentLife({ root, canvas, scene, camera, controls, garde
   on(canvas, 'pointermove', event => {
     const e = event as PointerEvent; if (!drag || drag.id !== e.pointerId) return
     if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return
-    drag.moved = true; trips.delete(drag.resident); setRay(e)
+    drag.moved = true; conversation=null;trips.delete(drag.resident); setRay(e)
     const hit = hitGround(); drag.valid = false
     if (hit) {
       const normal = hit.point.clone().normalize(), inHole = normal.distanceTo(VILLAGE_HOLE) < .087
@@ -230,6 +252,8 @@ export function setupResidentLife({ root, canvas, scene, camera, controls, garde
         const [shape, image, original] = await Promise.all([decode(record.shape), decode(record.texture), decode(record.original ?? record.texture)])
         if (disposed) break
         const model = buildMiniature(shape, { image, landmarks: [], bounds: { x: 0, y: 0, width: image.width, height: image.height }, color: '#d5c8b5' })
+        model.actor.userData.gyaru=!!record.gyaru
+        if(!record.gyaru){const map=(model.body.material as THREE.MeshStandardMaterial).map!;gyaruTexture(map.image as HTMLCanvasElement,residents.length);map.needsUpdate=true;model.actor.userData.gyaru=true}
         const normal = new THREE.Vector3().fromArray(record.normal).normalize()
         if (normal.lengthSq() < .5) normal.copy(VILLAGE_CLEARING)
         if (!garden.walkable(normal) || residents.some(r => r.normal.distanceTo(normal) < .18)) {
@@ -242,18 +266,24 @@ export function setupResidentLife({ root, canvas, scene, camera, controls, garde
         }
         const direction = new THREE.Vector3().crossVectors(normal, Math.abs(normal.y) > .9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize()
         const resident: Resident = { id: record.id, name: record.name.slice(0, 20), root: model.actor, body: model.body, normal, direction, radius: garden.radiusAt(normal), phase: Math.random() * 6, turnAt: 0 }
-        model.actor.scale.setScalar(.7); orient(resident); scene.add(model.actor); residents.push(resident); assets.set(resident.id, record); originalTextures.set(resident.id, original)
+        model.actor.scale.setScalar(.7); orient(resident); scene.add(model.actor); residents.push(resident); assets.set(resident.id, record); originalTextures.set(resident.id, original);cache(resident)
       } catch { if (!disposed) status.textContent = '읽을 수 없는 주민 데이터가 있어 해당 주민을 건너뛰었어요.' }
     }
   }).catch(() => { if (!disposed) status.textContent = '저장소를 열 수 없어요. 이번 주민은 저장되지 않을 수 있습니다.' }).finally(() => { loaded = true; if (!disposed) refresh() })
   return {
     ready,
-    interacting: () => !!drag || textureDialog.open || meeting,
-    added: (resident: Resident) => { cache(resident); refresh(); persist() },
+    interacting: () => !!drag || textureDialog.open || meeting || !!conversation,
+    added: (resident: Resident) => { if(!resident.root.userData.gyaru){originalTextures.set(resident.id,cloneCanvas(textureCanvas(resident)));gyaruTexture(textureCanvas(resident),residents.length);texture(resident).needsUpdate=true;resident.root.userData.gyaru=true}cache(resident); refresh(); persist() },
     suspend: () => { if (selected) leave() },
-    ownsMovement: (resident: Resident) => meeting || drag?.resident === resident || falling.has(resident) || textureDialog.open,
+    ownsMovement: (resident: Resident) => meeting || !!conversation?.pair.includes(resident) || drag?.resident === resident || falling.has(resident) || textureDialog.open,
     update: (delta: number) => {
       if (busy() || textureDialog.open) return
+      if(conversation){
+        conversation.age+=delta
+        const [a,b]=conversation.pair
+        for(const [r,other] of [[a,b],[b,a]]){r.direction.copy(other.normal).projectOnPlane(r.normal).normalize();if(r.direction.lengthSq()>.01)orient(r)}
+        if(conversation.age>=3.4){conversation.age=0;conversation.line++;if(conversation.line>=conversation.lines.length)conversation=null;else speak()}
+      }
       for (const [resident, trip] of trips) {
         trip.age += delta; const t = Math.min(1, trip.age / trip.duration), eased = t * t * (3 - 2 * t)
         const rotation = new THREE.Quaternion().setFromUnitVectors(trip.from, trip.to)

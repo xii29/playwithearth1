@@ -47,6 +47,7 @@ export function setupSpaceEdition(scene: THREE.Scene, root: HTMLElement, residen
     eventText.textContent = '미확인 우주선 접근 중… 작은 방문객들이 찾아왔어요!'
   }
   return {
+    setDaylight: (amount:number) => {stars.material.opacity=.85*(1-amount);stars.visible=amount<.99},
     encounter,
     update: (delta: number, paused: boolean) => {
       if (paused) return

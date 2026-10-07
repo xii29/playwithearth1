@@ -1,5 +1,6 @@
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 import { createLuminanceGridRenderer, randomWindowEffect, type EffectMode } from './travel-effects'
+import { PalmTurn } from './palm-turn'
 
 const WASM_ROOT = `${import.meta.env.BASE_URL}mediapipe/wasm`
 const HAND_MODEL_PATH = `${import.meta.env.BASE_URL}mediapipe/models/hand_landmarker.task`
@@ -224,6 +225,7 @@ export function setupTravel(root: HTMLElement) {
     if (next.mode === 'recolor') effectAmounts.recolor = next.recolorAmount
     selectEffectMode(next.mode)
   }
+  const palmTurn=new PalmTurn()
 
   const updateHandWindows = (now: number) => {
     if (!cameraStream || !handLandmarker || camera.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
@@ -232,6 +234,7 @@ export function setupTravel(root: HTMLElement) {
     lastHandDetection = now
     try {
       const result = handLandmarker.detectForVideo(camera, now)
+      if(palmTurn.update(result.landmarks as Landmark[][],result.handedness.map(h=>h[0]?.categoryName??''),now)){selectRandomGestureEffect();say('손바닥을 앞으로 돌려 효과를 바꿨어요.')}
       trackedHands = result.landmarks.slice(0, 2).filter(hand => hand.length >= 21) as Landmark[][]
       handsVisibleAt = now
       const hands = result.landmarks.slice(0, 2).map((detectedLandmarks) => {
@@ -279,8 +282,7 @@ export function setupTravel(root: HTMLElement) {
         return
       }
       if (!windowGestureActive) {
-        selectRandomGestureEffect()
-        say(`${modeLabels[effectMode]} 효과를 골랐어요. 손을 내렸다가 새 창을 만들면 다른 효과가 나와요.`)
+        say('손 창의 크기를 조절해 보세요. 손등에서 손바닥을 앞으로 돌리면 효과가 바뀝니다.')
         windowGestureActive = true
       }
       lastWindowGestureAt = now
@@ -432,10 +434,10 @@ export function setupTravel(root: HTMLElement) {
       if (energy <= 0.04) continue
       if (energy < 0.67) {
         const mix = energy / 0.67
-        heatPixels[pixel] = 10; heatPixels[pixel + 1] = Math.round(72 + 183 * mix); heatPixels[pixel + 2] = Math.round(180 + 75 * mix)
+        heatPixels[pixel] = Math.round(60+175*mix); heatPixels[pixel + 1] = Math.round(60 + 175 * mix); heatPixels[pixel + 2] = Math.round(45 + 130 * mix)
       } else {
         const mix = (energy - 0.67) / 0.33
-        heatPixels[pixel] = Math.round(30 + 225 * mix); heatPixels[pixel + 1] = Math.round(255 - 20 * mix); heatPixels[pixel + 2] = Math.round(255 - 210 * mix)
+        heatPixels[pixel] = Math.round(235 + 20 * mix); heatPixels[pixel + 1] = Math.round(235 + 15 * mix); heatPixels[pixel + 2] = Math.round(175 + 55 * mix)
       }
       heatPixels[pixel + 3] = Math.round(energy * 238)
     }

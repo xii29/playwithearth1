@@ -21,7 +21,7 @@ workerScope.import = async (url: string) => {
 
 let landmarker: HandLandmarker | null = null
 
-self.addEventListener('message', async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap; timestamp?: number }>) => {
+self.addEventListener('message', async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap; timestamp?: number; water?: boolean }>) => {
   const message = event.data
   if (message.type === 'init') {
     try {
@@ -32,8 +32,8 @@ self.addEventListener('message', async (event: MessageEvent<{ type: string; bitm
         baseOptions: { modelAssetPath: HAND_MODEL },
         runningMode: 'VIDEO',
         numHands: 2,
-        minHandDetectionConfidence: 0.58,
-        minHandPresenceConfidence: 0.52,
+        minHandDetectionConfidence: message.water ? 0.55 : 0.58,
+        minHandPresenceConfidence: message.water ? 0.5 : 0.52,
         minTrackingConfidence: 0.5,
       })
       self.postMessage({ type: 'ready' })

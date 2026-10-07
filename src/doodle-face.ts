@@ -15,7 +15,7 @@ type Player = 1 | 2
 type Landmark = { x: number; y: number; z: number }
 type Point = { x: number; y: number }
 type FaceState = { landmarks: Landmark[]; previous: Landmark[]; lastSeen: number; previousSeen: number; stableSince: number }
-type HandState = { pinching: boolean; point: Point; lastSeen: number; releaseSince: number; ratio: number }
+type HandState = { pinching: boolean; point: Point; lastSeen: number; releaseSince: number; ratio: number; missingSince?:number }
 type Basis = { center: Point; xAxis: Point; yAxis: Point; scale: number }
 type AttachedPoint = { anchor: number; u: number; v: number }
 type Stroke = { owner: Player; target: Player; color: string; points: AttachedPoint[] }
@@ -78,6 +78,9 @@ export function setupDoodleFace(root: HTMLElement) {
   let showcaseStartedAt = -Infinity
   let lastStatus = ''
   let pixelRatio = 1
+  let session=0,swapStartedAt=-Infinity,inferenceTime=-1
+  const input=document.createElement('canvas'),inputContext=input.getContext('2d')!
+  const faceCache=new Map<Player,{at:number;value:Landmark[]|null}>(),basisCache=new Map<Player,{at:number;value:Basis|null}>()
 
   const say = (message: string) => {
     if (lastStatus === message) return
@@ -85,10 +88,12 @@ export function setupDoodleFace(root: HTMLElement) {
     status.textContent = message
   }
 
-  const localPoint = (landmark: Landmark): { player: Player; point: Point } => {
+  const localPoint = (landmark: Landmark, fixedPlayer?:Player): { player: Player; point: Point } => {
     const mirroredX = 1 - landmark.x
-    const player: Player = mirroredX < 0.5 ? 1 : 2
-    return { player, point: { x: player === 1 ? mirroredX * 2 : (mirroredX - 0.5) * 2, y: landmark.y } }
+    const player: Player = fixedPlayer??(mirroredX < 0.5 ? 1 : 2)
+    const x=(mirroredX-(player-1)*.5)*2,{width,height}=panelMetrics[0]
+    const sw=(video.videoWidth||960)/2,sh=video.videoHeight||720,scale=Math.max(width/sw,height/sh)
+    return {player,point:{x:((width-sw*scale)/2+x*sw*scale)/width,y:((height-sh*scale)/2+landmark.y*sh*scale)/height}}
   }
 
   const panelForPlayer = (player: Player) => player === 2 ? 0 : 1
@@ -117,32 +122,35 @@ export function setupDoodleFace(root: HTMLElement) {
   }
 
   const predictedFace = (player: Player, now: number) => {
+    const cached=faceCache.get(player);if(cached?.at===now)return cached.value
     const face = faces.get(player)
     if (!face || now - face.lastSeen > FACE_GRACE) return null
     const elapsed = Math.min(90, Math.max(0, now - face.lastSeen))
     const period = Math.max(1, face.lastSeen - face.previousSeen)
     const factor = Math.min(0.36, elapsed / period)
-    return face.landmarks.map((landmark, index) => {
+    const value=face.landmarks.map((landmark, index) => {
       const previous = face.previous[index] ?? landmark
       return { x: landmark.x + (landmark.x - previous.x) * factor, y: landmark.y + (landmark.y - previous.y) * factor, z: landmark.z + (landmark.z - previous.z) * factor }
     })
+    faceCache.set(player,{at:now,value});return value
   }
 
   const basisFor = (player: Player, now: number): Basis | null => {
+    const cached=basisCache.get(player);if(cached?.at===now)return cached.value
     const landmarks = predictedFace(player, now)
     if (!landmarks) return null
-    const left = localPoint(landmarks[234] ?? landmarks[0]).point
-    const right = localPoint(landmarks[454] ?? landmarks[0]).point
-    const forehead = localPoint(landmarks[10] ?? landmarks[0]).point
-    const chin = localPoint(landmarks[152] ?? landmarks[0]).point
-    const center = localPoint(landmarks[1] ?? landmarks[0]).point
+    const left = localPoint(landmarks[234] ?? landmarks[0],player).point
+    const right = localPoint(landmarks[454] ?? landmarks[0],player).point
+    const forehead = localPoint(landmarks[10] ?? landmarks[0],player).point
+    const chin = localPoint(landmarks[152] ?? landmarks[0],player).point
+    const center = localPoint(landmarks[1] ?? landmarks[0],player).point
     const rawX = { x: right.x - left.x, y: right.y - left.y }
     const scale = Math.max(0.055, Math.hypot(rawX.x, rawX.y))
     const xAxis = { x: rawX.x / scale, y: rawX.y / scale }
     const rawY = { x: chin.x - forehead.x, y: chin.y - forehead.y }
     const yScale = Math.max(0.055, Math.hypot(rawY.x, rawY.y))
     const sign = xAxis.x * rawY.y - xAxis.y * rawY.x < 0 ? -1 : 1
-    return { center, xAxis, yAxis: { x: -xAxis.y * sign, y: xAxis.x * sign }, scale: (scale + yScale) * 0.5 }
+    const value={ center, xAxis, yAxis: { x: -xAxis.y * sign, y: xAxis.x * sign }, scale: (scale + yScale) * 0.5 };basisCache.set(player,{at:now,value});return value
   }
 
   const drawCameraHalf = (context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, sourcePlayer: Player) => {
@@ -159,7 +167,7 @@ export function setupDoodleFace(root: HTMLElement) {
     context.save()
     context.translate(width, 0)
     context.scale(-1, 1)
-    context.drawImage(video, sourcePlayer === 1 ? 0 : halfWidth, 0, halfWidth, video.videoHeight, (width - drawWidth) * 0.5, (height - drawHeight) * 0.5, drawWidth, drawHeight)
+    context.drawImage(video, sourcePlayer === 1 ? halfWidth : 0, 0, halfWidth, video.videoHeight, (width - drawWidth) * 0.5, (height - drawHeight) * 0.5, drawWidth, drawHeight)
     context.restore()
   }
 
@@ -170,11 +178,11 @@ export function setupDoodleFace(root: HTMLElement) {
     let anchor = 0
     let nearest = Infinity
     landmarks.forEach((landmark, index) => {
-      const candidate = localPoint(landmark).point
+      const candidate = localPoint(landmark,target).point
       const candidateDistance = distance(point, candidate)
       if (candidateDistance < nearest) { nearest = candidateDistance; anchor = index }
     })
-    const anchorPoint = localPoint(landmarks[anchor]).point
+    const anchorPoint = localPoint(landmarks[anchor],target).point
     const delta = { x: point.x - anchorPoint.x, y: point.y - anchorPoint.y }
     return { anchor, u: (delta.x * basis.xAxis.x + delta.y * basis.xAxis.y) / basis.scale, v: (delta.x * basis.yAxis.x + delta.y * basis.yAxis.y) / basis.scale }
   }
@@ -183,7 +191,7 @@ export function setupDoodleFace(root: HTMLElement) {
     const landmarks = predictedFace(target, now)
     const basis = basisFor(target, now)
     if (!landmarks || !basis || !landmarks[point.anchor]) return null
-    const anchor = localPoint(landmarks[point.anchor]).point
+    const anchor = localPoint(landmarks[point.anchor],target).point
     return { x: anchor.x + (basis.xAxis.x * point.u + basis.yAxis.x * point.v) * basis.scale, y: anchor.y + (basis.xAxis.y * point.u + basis.yAxis.y * point.v) * basis.scale }
   }
 
@@ -224,7 +232,7 @@ export function setupDoodleFace(root: HTMLElement) {
   const drawPencil = (context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, owner: Player, hand: HandState) => {
     const target = other(owner)
     const panelIndex = panelForPlayer(target)
-    if (sourceForPanel(panelIndex) !== target || performance.now() - hand.lastSeen > HAND_GRACE) return
+    if (sourceForPanel(panelIndex) !== target || performance.now() - (hand.missingSince??hand.lastSeen) > HAND_GRACE) return
     const width = canvas.width / pixelRatio
     const height = canvas.height / pixelRatio
     const tip = { x: hand.point.x * width, y: hand.point.y * height }
@@ -273,17 +281,18 @@ export function setupDoodleFace(root: HTMLElement) {
   }
 
   const updateWaiting = (now: number) => {
-    ;([1, 2] as Player[]).forEach((player, index) => waiting[index].classList.toggle('is-hidden', now - (faces.get(player)?.lastSeen ?? -Infinity) <= FACE_GRACE))
+    waiting.forEach((badge,index)=>badge.classList.toggle('is-hidden',now-(faces.get(sourceForPanel(index))?.lastSeen??-Infinity)<=FACE_GRACE))
   }
 
   const createLandmarkers = async (delegate: 'GPU' | 'CPU') => {
+    const request=session
     const vision = await FilesetResolver.forVisionTasks(WASM_ROOT)
     if (disposed) throw new Error('DoodleFace has been disposed.')
     const base = { baseOptions: { modelAssetPath: FACE_MODEL, delegate }, runningMode: 'VIDEO' as const }
     const face = await FaceLandmarker.createFromOptions(vision, { ...base, numFaces: 2, outputFaceBlendshapes: false, outputFacialTransformationMatrixes: false })
     try {
       const hand = await HandLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: HAND_MODEL, delegate }, runningMode: 'VIDEO', numHands: 2 })
-      if (disposed) { hand.close(); throw new Error('DoodleFace has been disposed.') }
+      if (disposed||session!==request) { hand.close(); throw new Error('DoodleFace has been disposed.') }
       faceLandmarker?.close()
       handLandmarker?.close()
       faceLandmarker = face
@@ -295,28 +304,35 @@ export function setupDoodleFace(root: HTMLElement) {
   }
 
   const retryWithCpu = async () => {
-    if (cpuFallbackInFlight || usingCpu || disposed) return
+    if (cpuFallbackInFlight || disposed) return
+    if(usingCpu){lobbyStatus.textContent='인식 오류가 발생했어요. 다시 시작해 주세요.';resetToLobby(true);return}
     cpuFallbackInFlight = true
+    const request=session
+    faceLandmarker?.close();handLandmarker?.close();faceLandmarker=null;handLandmarker=null
     say('손 인식기를 다시 준비하고 있어요.')
     try {
       await createLandmarkers('CPU')
+      if(request!==session||disposed)return
       usingCpu = true
       say('두 사람이 화면에 나란히 서 주세요.')
     } catch {
-      say('모델을 불러오지 못했어요. 다시 시작해 주세요.')
+      if(request!==session||disposed)return
+      lobbyStatus.textContent='모델을 불러오지 못했어요. 다시 시작해 주세요.'
       resetToLobby(true)
-    } finally { cpuFallbackInFlight = false }
+    } finally { if(request===session)cpuFallbackInFlight = false }
   }
 
   const updateFaceInference = (now: number) => {
     if (!faceLandmarker || now - lastFaceAt < faceInterval || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return false
     lastFaceAt = now
     try {
-      const result = faceLandmarker.detectForVideo(video, now)
+      const result = faceLandmarker.detectForVideo(input, now)
+      faceCache.clear();basisCache.clear()
       const occupied = new Set<Player>()
       result.faceLandmarks.forEach((raw) => {
         const landmarks = (raw as Landmark[]).map((landmark) => ({ ...landmark }))
-        const player = localPoint(landmarks[1] ?? landmarks[0]).player
+        const center=landmarks.reduce((sum,p)=>sum+p.x,0)/landmarks.length
+        const player:Player=1-center<.5?1:2
         if (occupied.has(player)) return
         occupied.add(player)
         const old = faces.get(player)
@@ -331,7 +347,7 @@ export function setupDoodleFace(root: HTMLElement) {
   }
 
   const paletteColorAt = (owner: Player, point: Point) => {
-    const panel = panelForPlayer(owner)
+    const panel = owner-1
     return panelMetrics[panel].palette.findIndex((box) => point.x * panelMetrics[panel].width >= box.x && point.x * panelMetrics[panel].width <= box.x + box.width && point.y * panelMetrics[panel].height >= box.y && point.y * panelMetrics[panel].height <= box.y + box.height)
   }
 
@@ -354,10 +370,12 @@ export function setupDoodleFace(root: HTMLElement) {
   }
 
   const updateHand = (owner: Player, landmarks: Landmark[], now: number) => {
-    const midpoint = localPoint({ x: (landmarks[4].x + landmarks[8].x) * 0.5, y: (landmarks[4].y + landmarks[8].y) * 0.5, z: 0 }).point
-    const palm = Math.max(0.001, Math.hypot(landmarks[0].x - landmarks[9].x, landmarks[0].y - landmarks[9].y))
-    const ratio = Math.hypot(landmarks[4].x - landmarks[8].x, landmarks[4].y - landmarks[8].y) / palm
-    const previous = hands.get(owner)
+    const midpoint = localPoint({ x: (landmarks[4].x + landmarks[8].x) * 0.5, y: (landmarks[4].y + landmarks[8].y) * 0.5, z: 0 },owner).point
+    const aspect=(video.videoWidth||1)/(video.videoHeight||1)
+    const palm = Math.max(0.001, Math.hypot((landmarks[5].x - landmarks[17].x)*aspect, landmarks[5].y - landmarks[17].y))
+    const ratio = Math.hypot((landmarks[4].x - landmarks[8].x)*aspect, landmarks[4].y - landmarks[8].y) / palm
+    const old=hands.get(owner),previous=old&&now-(old.missingSince??old.lastSeen)<=HAND_GRACE?old:undefined
+    if(!previous)activeStrokes.delete(owner)
     let pinching = previous?.pinching ?? false
     let releaseSince = previous?.releaseSince ?? -Infinity
     if (!pinching && ratio <= 0.62) { pinching = true; releaseSince = -Infinity }
@@ -373,13 +391,15 @@ export function setupDoodleFace(root: HTMLElement) {
       activeStrokes.delete(owner)
       return
     }
-    if (!Number.isFinite(roundStartedAt)) return
+    if (!Number.isFinite(roundStartedAt)||now<roundStartedAt||Number.isFinite(showcaseStartedAt)) return
     if (!pinching) { activeStrokes.delete(owner); return }
     const target = other(owner)
     if (!activeStrokes.has(owner)) {
+      if(previous?.pinching)return
       if (!isInsideFace(target, midpoint, now)) return
       const stroke: Stroke = { owner, target, color: colors.get(owner) ?? COLORS[0], points: [] }
       strokes.push(stroke)
+      root.querySelector(`#doodle-score-${owner===1?'one':'two'}`)!.textContent=String(strokes.filter(s=>s.owner===owner).length)
       activeStrokes.set(owner, stroke)
     }
     appendPoint(owner, midpoint, now)
@@ -389,22 +409,24 @@ export function setupDoodleFace(root: HTMLElement) {
     if (!handLandmarker || now - lastHandAt < handInterval || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return false
     lastHandAt = now
     try {
-      const result = handLandmarker.detectForVideo(video, now)
+      const result = handLandmarker.detectForVideo(input, now)
       const occupied = new Set<Player>()
       result.landmarks.forEach((raw) => {
         const landmarks = raw as Landmark[]
-        const owner = localPoint(landmarks[9]).player
+        const center=[0,5,9,13,17].reduce((sum,i)=>sum+landmarks[i].x,0)/5
+        const owner:Player=1-center<.5?1:2
         if (occupied.has(owner)) return
         occupied.add(owner)
         updateHand(owner, landmarks, now)
       })
+      hands.forEach((hand,owner)=>{if(!occupied.has(owner)&&hand.missingSince===undefined)hand.missingSince=now})
       return true
     } catch { void retryWithCpu(); return false }
   }
 
   const preserveHands = (now: number) => {
     hands.forEach((hand, owner) => {
-      if (now - hand.lastSeen > HAND_GRACE) {
+      if (now - (hand.missingSince??hand.lastSeen) > HAND_GRACE) {
         hands.delete(owner)
         activeStrokes.delete(owner)
       }
@@ -412,11 +434,15 @@ export function setupDoodleFace(root: HTMLElement) {
   }
 
   const startSwap = () => {
-    output.forEach((canvas, index) => {
+    const outer=game.getBoundingClientRect(),rect=panels.getBoundingClientRect()
+    Object.assign(transitionLayer.style,{top:`${rect.top-outer.top}px`,left:`${rect.left-outer.left}px`,right:'auto',width:`${rect.width}px`,height:`${rect.height}px`})
+    output.forEach((_canvas, index) => {
       const context = swapContexts[index]
       context.setTransform(1, 0, 0, 1, 0, 0)
-      context.drawImage(canvas, 0, 0)
+      drawCameraHalf(context,transition[index],index===0?1:2)
     })
+    const a=output[0].getBoundingClientRect(),b=output[1].getBoundingClientRect()
+    transitionLayer.style.setProperty('--swap-x',`${b.left-a.left}px`);transitionLayer.style.setProperty('--swap-y',`${b.top-a.top}px`)
     transitionLayer.classList.remove('is-active')
     void transitionLayer.offsetWidth
     transitionLayer.classList.add('is-active')
@@ -424,12 +450,16 @@ export function setupDoodleFace(root: HTMLElement) {
   }
 
   const resetToLobby = (keepMessage = false) => {
+    session++;cancelAnimationFrame(animationFrame);animationFrame=0
+    swapStartedAt=-Infinity;faceCache.clear();basisCache.clear();inferenceTime=-1
     active = false
+    cpuFallbackInFlight=false
     starting = false
     faces.clear()
     hands.clear()
     activeStrokes.clear()
     strokes.length = 0
+    root.querySelector('#doodle-score-one')!.textContent='0';root.querySelector('#doodle-score-two')!.textContent='0';timer.textContent='WAITING'
     countdownStartedAt = -Infinity
     roundStartedAt = -Infinity
     showcaseStartedAt = -Infinity
@@ -461,53 +491,63 @@ export function setupDoodleFace(root: HTMLElement) {
   const maybeAdvance = (now: number) => {
     const first = faces.get(1)
     const second = faces.get(2)
-    if (!Number.isFinite(countdownStartedAt) && first && second && now - first.stableSince >= READY_STABLE_MS && now - second.stableSince >= READY_STABLE_MS) {
+    const ready=first&&second&&now-first.lastSeen<FACE_GRACE&&now-second.lastSeen<FACE_GRACE
+    if(!ready&&!Number.isFinite(swapStartedAt)){countdownStartedAt=-Infinity;timer.textContent='WAITING'}
+    if (!Number.isFinite(countdownStartedAt) && ready && now - first.stableSince >= READY_STABLE_MS && now - second.stableSince >= READY_STABLE_MS) {
       countdownStartedAt = now
       say('두 사람 확인! 5초 뒤 화면을 바꿔요.')
     }
-    if (Number.isFinite(countdownStartedAt) && !Number.isFinite(roundStartedAt)) {
+    if (Number.isFinite(countdownStartedAt) && !Number.isFinite(swapStartedAt)) {
       const remaining = Math.max(0, 5 - Math.floor((now - countdownStartedAt) / 1000))
       timer.textContent = `READY ${remaining}`
       if (now - countdownStartedAt >= 5000) {
         startSwap()
-        roundStartedAt = now + SWAP_MS
+        swapStartedAt=now
       }
     }
+    if(Number.isFinite(swapStartedAt)&&!Number.isFinite(roundStartedAt)&&now-swapStartedAt>=SWAP_MS){roundStartedAt=now;transitionLayer.classList.remove('is-active');hands.clear();activeStrokes.clear();say('엄지와 검지를 모아 상대 얼굴에 그려 보세요.')}
     if (Number.isFinite(roundStartedAt) && now >= roundStartedAt) {
       const remaining = Math.max(0, Math.ceil((ROUND_MS - (now - roundStartedAt)) / 1000))
-      timer.textContent = `00:${String(remaining).padStart(2, '0')}`
+      timer.textContent = `${String(Math.floor(remaining/60)).padStart(2,'0')}:${String(remaining%60).padStart(2, '0')}`
       if (now - roundStartedAt >= ROUND_MS) finishRound(now)
     }
     if (Number.isFinite(showcaseStartedAt)) {
       if (now - showcaseStartedAt >= FINISH_MESSAGE_MS) toast.hidden = true
-      if (now - showcaseStartedAt >= SHOWCASE_MS) resetToLobby()
+      if (now - showcaseStartedAt >= FINISH_MESSAGE_MS+SHOWCASE_MS) resetToLobby()
     }
   }
 
   const loop = (now: number) => {
     if (disposed || !active) return
-    const gestureActive = [...hands.values()].some((hand) => hand.pinching && now - hand.lastSeen <= HAND_GRACE)
+    let handUpdated=false
+    const fresh=video.readyState>=2&&video.currentTime!==inferenceTime&&!cpuFallbackInFlight
+    if(fresh){const w=lowPower?320:640,h=Math.round(w*video.videoHeight/video.videoWidth);if(input.width!==w||input.height!==h){input.width=w;input.height=h}inputContext.drawImage(video,0,0,w,h)}
+    const gestureActive = [...hands.values()].some((hand) => hand.pinching && now - (hand.missingSince??hand.lastSeen) <= HAND_GRACE)
     const handDue = now - lastHandAt >= handInterval
     const faceDue = now - lastFaceAt >= faceInterval
-    if (gestureActive && handDue) updateHandInference(now)
+    if(fresh){if (gestureActive && handDue&&now-lastFaceAt<200) handUpdated=updateHandInference(now)
     else if (faceDue) updateFaceInference(now)
-    else if (handDue) updateHandInference(now)
+    else if (handDue) handUpdated=updateHandInference(now)
+    inferenceTime=video.currentTime}
     preserveHands(now)
     updateWaiting(now)
     maybeAdvance(now)
-    if (now - lastRenderAt >= renderInterval) { drawFrame(now); lastRenderAt = now }
-    animationFrame = requestAnimationFrame(loop)
+    if(!active)return
+    output.forEach((canvas,i)=>{const r=canvas.getBoundingClientRect();panelMetrics[i].palette=[...canvas.parentElement!.querySelectorAll('.doodle-palette button')].map(b=>{const box=b.getBoundingClientRect();return{x:box.left-r.left,y:box.top-r.top,width:box.width,height:box.height}})})
+    if (handUpdated||now - lastRenderAt >= renderInterval) { drawFrame(now); lastRenderAt = now }
+    if(active)animationFrame = requestAnimationFrame(loop)
   }
 
   const startGame = async () => {
     if (starting || active || disposed) return
     if (!window.isSecureContext) { lobbyStatus.textContent = '보안 연결(HTTPS)에서 카메라를 열어 주세요.'; return }
     starting = true
+    const request=++session;usingCpu=false
     startButton.disabled = true
     lobbyStatus.textContent = '카메라와 손 인식기를 준비하고 있어요.'
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: lowPower ? 640 : 960 }, height: { ideal: lowPower ? 480 : 720 }, frameRate: { ideal: lowPower ? 24 : 30, max: lowPower ? 24 : 30 } }, audio: false })
-      if (disposed) { stream.getTracks().forEach((track) => track.stop()); stream = null; return }
+      if (disposed||session!==request) { stream.getTracks().forEach((track) => track.stop()); stream = null; return }
       video.srcObject = stream
       await video.play()
       if (disposed) return

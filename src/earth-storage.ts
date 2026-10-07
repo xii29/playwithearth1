@@ -1,4 +1,4 @@
-export type SavedResident = { id: string; name: string; shape: string; texture: string; original?: string; normal: number[] }
+export type SavedResident = { id: string; name: string; shape: string; texture: string; original?: string; normal: number[]; gyaru?:boolean }
 let writes: Promise<void> = Promise.resolve()
 const open = () => new Promise<IDBDatabase>((resolve, reject) => {
   const request = indexedDB.open('earth-village-residents', 1)

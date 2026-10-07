@@ -4,7 +4,7 @@ import { moneyTemplate } from './money-template'
 import { afterglowTemplate } from './afterglow'
 import { setupCaptureControl } from './capture-control.ts'
 
-type ExampleName = 'home' | 'space' | 'typing' | 'claw' | 'sampler' | 'hand' | 'water' | 'balloon' | 'lab' | 'rubber' | 'shampoo' | 'doodle' | 'travel' | 'aquarium' | 'sniper' | 'earth' | 'body-fx' | 'money' | 'afterglow'
+type ExampleName = 'home' | 'space' | 'typing' | 'claw' | 'sampler' | 'hand' | 'water' | 'balloon' | 'lab' | 'rubber' | 'shampoo' | 'doodle' | 'travel' | 'aquarium' | 'sniper' | 'earth' | 'body-fx' | 'money' | 'afterglow' | 'fireworks'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 
@@ -49,6 +49,7 @@ const exampleTemplates: Record<ExampleName, () => string> = {
   'body-fx': () => bodyTemplate(),
   money: () => moneyTemplate(),
   afterglow: () => afterglowTemplate(),
+  fireworks: () => afterglowTemplate(),
   earth: () => `
     <main class="earth-example example-view earth-space-edition">
       <div class="earth-space-logo"><img src="${import.meta.env.BASE_URL}logo.webp" alt="모여봐요 동물의 숲" width="639" height="246" draggable="false"></div>
@@ -263,29 +264,13 @@ const exampleTemplates: Record<ExampleName, () => string> = {
   `,
   lab: () => `
     <main class="lab-example example-view">
-      <section class="lab-camera-stage" style="--lab-pond-image: url('${import.meta.env.BASE_URL}lab/lotus-pond.png')" aria-label="손가락 개수만큼 연꽃잎을 피우는 인터랙티브 연못">
-        <div class="lab-camera-preview" aria-label="손 인식 카메라 화면">
-          <video id="lab-camera" autoplay muted playsinline aria-hidden="true"></video>
-          <span>LIVE HAND CAMERA</span>
-        </div>
-        <div id="lab-lotus" class="lab-lotus" role="img" aria-label="주먹에서는 꽃봉오리, 손가락 하나마다 꽃잎 한 장이 열리고 다섯 손가락에서는 만개하는 연꽃">
-          <img id="lab-lotus-bud" class="lab-lotus__bud" src="${import.meta.env.BASE_URL}lab/lotus-bud.png" alt="닫힌 연꽃 봉오리" draggable="false">
-          <div id="lab-lotus-bloom" class="lab-lotus__bloom" aria-hidden="true">
-            <img class="lab-lotus__petal" data-lotus-petal="0" src="${import.meta.env.BASE_URL}lab/lotus-petal.png" alt="" draggable="false">
-            <img class="lab-lotus__petal" data-lotus-petal="1" src="${import.meta.env.BASE_URL}lab/lotus-petal.png" alt="" draggable="false">
-            <img class="lab-lotus__petal" data-lotus-petal="2" src="${import.meta.env.BASE_URL}lab/lotus-petal.png" alt="" draggable="false">
-            <img class="lab-lotus__petal" data-lotus-petal="3" src="${import.meta.env.BASE_URL}lab/lotus-petal.png" alt="" draggable="false">
-            <img class="lab-lotus__petal" data-lotus-petal="4" src="${import.meta.env.BASE_URL}lab/lotus-petal.png" alt="" draggable="false">
-          </div>
-          <img id="lab-lotus-complete" class="lab-lotus__complete" src="${import.meta.env.BASE_URL}lab/lotus-flower.png" alt="활짝 핀 연꽃" draggable="false">
-        </div>
-        <header class="lab-hud">
-          <p id="lab-status">주먹은 꽃봉오리, 손가락 하나마다 꽃잎 한 장이 열리고 손을 다 펴면 만개합니다.</p>
-          <button id="lab-camera-toggle" type="button">카메라 시작</button>
-        </header>
-        <div class="lab-guide" aria-hidden="true"><span></span><p>주먹 · lotus-bud<br>손가락 1개 · 꽃잎 1장<br>손 전체 · lotus-flower</p></div>
-        <div class="lab-meter" aria-live="polite"><small>LOTUS PETALS</small><strong id="lab-finger-count">0 / 5 · 0 PETALS</strong></div>
-      </section>
+      <video id="lab-camera" autoplay muted playsinline aria-hidden="true"></video>
+      <canvas id="lab-flowers" aria-label="왼손과 오른손의 펼침 정도에 따라 피어나는 세 송이 꽃"></canvas>
+      <header class="lab-hud">
+        <p id="lab-status" role="status">카메라를 켜고 양손으로 세 송이 꽃을 피워 보세요.</p>
+        <button id="lab-camera-toggle" type="button">카메라 시작</button>
+      </header>
+      <p class="lab-bloom-guide">손을 오므리면 봉오리 · 펼칠수록 만개<br><small>왼쪽은 왼손, 오른쪽은 오른손, 가운데는 양손의 평균에 반응해요.</small></p>
     </main>
   `,
   rubber: () => `
@@ -565,12 +550,13 @@ async function mountSniperExample(isCurrent: () => boolean) {
 }
 
 async function showExample(name: ExampleName) {
+  if (name === 'afterglow') name = 'fireworks'
   if (activeExample === name) return
   activeExample = name
   const request = ++exampleRequest
   const isCurrent = () => request === exampleRequest
   releaseCurrentExample()
-  if (name !== 'home') disposeCaptureControl = setupCaptureControl(app)
+  if (name !== 'home' && name !== 'money' && name !== 'fireworks' && name !== 'doodle') disposeCaptureControl = setupCaptureControl(app)
   stage.innerHTML = exampleTemplates[name]()
   stage.dataset.activeExample = name
   app.dataset.activeExample = name
@@ -609,13 +595,13 @@ async function showExample(name: ExampleName) {
     const { setupEarthVillage } = await import('./earth-village.ts')
     if (isCurrent()) disposeMountedExample = setupEarthVillage(document.querySelector<HTMLElement>('.earth-example')!)
   }
-  if (name === 'body-fx' || name === 'afterglow') {
+  if (name === 'body-fx' || name === 'fireworks') {
     const { setupBodyCloud } = await import('./body-cloud-example.ts')
-    if (isCurrent()) disposeMountedExample = setupBodyCloud(stage.querySelector<HTMLElement>('.body-example')!,name==='afterglow')
+    if (isCurrent()) disposeMountedExample = setupBodyCloud(stage.querySelector<HTMLElement>('.body-example')!,name==='fireworks')
   }
   if (name === 'money') {
-    const { setupBodyExample } = await import('./body-examples.ts')
-    if (isCurrent()) disposeMountedExample = setupBodyExample(stage.querySelector<HTMLElement>('.body-example')!, true)
+    const { setupMoneyExample } = await import('./money-example.ts')
+    if (isCurrent()) disposeMountedExample = setupMoneyExample(stage.querySelector<HTMLElement>('.body-example')!)
   }
   if (isCurrent()) disposeCurrentExample = disposeMountedExample
   else disposeMountedExample()

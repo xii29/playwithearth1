@@ -20,14 +20,21 @@ function randomBetween(minimum: number, maximum: number) {
 }
 
 export function createSpaceParticles(canvas: HTMLCanvasElement | OffscreenCanvas, onFirstFrame?: () => void, onFrame?: () => boolean) {
-  const chromium = /(?:Chrome|Chromium)\//.test(navigator.userAgent)
-  // Chrome's accelerated Canvas path can lose the entire frame when batching
-  // hundreds of per-star shadow filters. A CPU-backed surface keeps the same
-  // drawing commands and is rendered in a worker when supported.
-  const context = canvas.getContext('2d', { willReadFrequently: chromium }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
+  // Prebaked glows avoid per-star filters and keep GPU Canvas acceleration.
+  const context = canvas.getContext('2d', { alpha:false }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
   if (!context) throw new Error('2D canvas is unavailable')
 
   const particles: SpaceParticle[] = []
+  // Bake the original circle + shadowBlur drawing verbatim, rather than
+  // substituting radial gradients. Reuse it for every animation frame.
+  const sprites=new Map<string,HTMLCanvasElement|OffscreenCanvas>()
+  const starSprite=(color:string,radius:number,gathering:boolean)=>{
+    const r=Math.round(radius*8)/8,key=`${color}:${r}:${gathering}`
+    let sprite=sprites.get(key);if(sprite)return sprite
+    const blur=r*(gathering?8:5),padding=Math.ceil(blur*4+r*1.16+2),size=padding*2
+    sprite=typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(size*2,size*2):document.createElement('canvas');sprite.width=sprite.height=size*2
+    const c=sprite.getContext('2d') as CanvasRenderingContext2D;c.scale(2,2);c.fillStyle=color;c.shadowColor=color;c.shadowBlur=blur*2;c.beginPath();c.arc(padding,padding,r*(gathering?1.16:1),0,TAU);c.fill();sprites.set(key,sprite);return sprite
+  }
   let width = 1
   let height = 1
   let pixelRatio = 1
@@ -85,14 +92,14 @@ export function createSpaceParticles(canvas: HTMLCanvasElement | OffscreenCanvas
   const rebuildGalaxy = () => {
     const count = Math.max(720, Math.min(1800, Math.round(width * height / 720)))
     particles.length = 0
-    for (let index = 0; index < count; index += 1) particles.push(createGalaxyParticle(index, count))
+    for (let index = 0; index < count; index += 1){const p=createGalaxyParticle(index,count);particles.push(p);starSprite(p.color,p.radius,false);starSprite(p.color,p.radius,true)}
   }
 
   const resize = (nextWidth: number, nextHeight: number, ratio: number) => {
-    if (particles.length && width === nextWidth && height === nextHeight && pixelRatio === Math.min(ratio || 1, 2)) return
+    if (particles.length && width === nextWidth && height === nextHeight && pixelRatio === Math.min(ratio || 1,2,2560/Math.max(nextWidth,nextHeight))) return
     width = Math.max(1, nextWidth)
     height = Math.max(1, nextHeight)
-    pixelRatio = Math.min(ratio || 1, 2)
+    pixelRatio = Math.min(ratio || 1, 2,2560/Math.max(width,height))
     canvas.width = Math.round(width * pixelRatio)
     canvas.height = Math.round(height * pixelRatio)
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
@@ -206,26 +213,15 @@ export function createSpaceParticles(canvas: HTMLCanvasElement | OffscreenCanvas
     }
 
     particles.forEach((particle) => {
-      // Bound the screen-blended shadow to its support region. Without an
-      // explicit clip, Chrome can allocate/composite a full-canvas filter layer
-      // per star, which becomes especially expensive on Retina displays.
+      // Cull offscreen sprites before compositing cached glow textures.
       const blur = particle.radius * (isGathering ? 8 : 5)
       const padding = Math.ceil(blur * 4 + particle.radius * 1.16 + 2)
       const left = Math.floor(particle.x - padding), top = Math.floor(particle.y - padding)
       if (left > width || top > height || left + padding * 2 + 2 < 0 || top + padding * 2 + 2 < 0) return
-      context.save()
-      context.beginPath()
-      context.rect(left, top, padding * 2 + 2, padding * 2 + 2)
-      context.clip()
       const twinkle = 0.72 + Math.sin(particle.phase) * 0.28
       context.globalAlpha = particle.alpha * twinkle
-      context.fillStyle = particle.color
-      context.shadowColor = particle.color
-      context.shadowBlur = blur
-      context.beginPath()
-      context.arc(particle.x, particle.y, particle.radius * (isGathering ? 1.16 : 1), 0, TAU)
-      context.fill()
-      context.restore()
+      const sprite=starSprite(particle.color,particle.radius,isGathering),size=sprite.width/2
+      context.drawImage(sprite,particle.x-size/2,particle.y-size/2,size,size)
     })
     context.globalCompositeOperation = 'source-over'
     context.globalAlpha = 1
@@ -240,13 +236,7 @@ export function createSpaceParticles(canvas: HTMLCanvasElement | OffscreenCanvas
     draw()
     if (onFirstFrame) { const ready = onFirstFrame; onFirstFrame = undefined; ready() }
     if (onFrame?.() === false) { animationFrameId = 0; return }
-    if (!chromium) { animationFrameId = requestAnimationFrame(render); return }
-    // The fallback renderer must yield a task boundary for menu/input events;
-    // continuously expensive RAF callbacks can otherwise monopolize Chrome.
-    frameTimer = setTimeout(() => {
-      frameTimer = undefined
-      if (!disposed && visible) animationFrameId = requestAnimationFrame(render)
-    }, 16)
+    animationFrameId = requestAnimationFrame(render)
   }
 
   const setVisible = (next: boolean) => {

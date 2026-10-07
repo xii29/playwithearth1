@@ -1,5 +1,4 @@
 import './example-gallery.css'
-import { galleryPlaceholders } from './gallery-placeholders.ts'
 
 // Static, code-drawn previews: the gallery never imports an example renderer.
 const examples = [
@@ -10,7 +9,7 @@ const examples = [
   ['hand', 'Lemonade', '손으로 레몬을 짜서 채우는 상큼한 한 잔', '#f4efbc'],
   ['water', 'WaterTouch', '손끝에서 번지는 물결', '#badce9'],
   ['balloon', 'Balloon', '잡고, 터뜨리고, 불어 보는 둥실둥실 풍선', '#e6eafb'],
-  ['lab', 'lab', '손가락을 펼치면 피어나는 연꽃', '#173f3c'],
+  ['lab', 'lab', '양손을 펼치는 만큼 피어나는 세 송이 꽃', '#000000'],
   ['rubber', '고무 인간', '당기면 늘어나고 놓으면 돌아오는 얼굴', '#e5d8f3'],
   ['shampoo', 'Shampoo', '거품을 만들고 샤워기로 씻어 보세요', '#d6edf2'],
   ['doodle', 'DoodleFace', '서로의 얼굴 위에 그리는 장난스러운 낙서', '#fff0d8'],
@@ -20,11 +19,11 @@ const examples = [
   ['earth', '동물의 숲', '별 사이 행성에서 함께 사는 동물 친구들', '#b4acd9'],
   ['money', 'MONEY RAIN', '몸과 손 위로 떨어지고 쌓이는 돈', '#355d43'],
   ['body-fx', 'BODY POINT CLOUD', '작은 흰색 입자로 채운 몸 · 움직임의 잔상', '#000000'],
-  ['afterglow', 'AFTERGLOW', '손끝에서 피어나는 불꽃놀이', '#000000'],
+  ['fireworks', 'FIREWORKS', '손끝에서 피어나는 불꽃놀이', '#000000'],
 ] as const
 
 export function setupExampleGallery(root:HTMLElement,open:(name:string)=>void) {
-  const items=[...examples.map(([id,title])=>({id,title,available:true})),...galleryPlaceholders.map(p=>({id:p.id,title:p.title,available:false}))]
+  const items=examples.map(([id,title])=>({id,title,available:true}))
   root.innerHTML=`<header class="gallery-heading"><p>Scroll up/down</p></header><div class="clock-gallery" aria-label="전체 예제 번호 메뉴">${items.map((item,i)=>`<button class="clock-number" data-slot="${i}" data-gallery-example="${item.id}" aria-label="${item.title} ${item.available ? '예제 열기' : '준비 중'}" aria-pressed="false"><span>${i+1}</span></button>`).join('')}<button class="gallery-open" aria-label="선택한 예제 열기"></button></div><footer class="gallery-footer"><span class="gallery-count"></span><button data-turn="-1" aria-label="이전 예제">←</button><button data-turn="1" aria-label="다음 예제">→</button></footer>`
   const numbers=[...root.querySelectorAll<HTMLButtonElement>('.clock-number')],launch=root.querySelector<HTMLButtonElement>('.gallery-open')!,count=root.querySelector<HTMLElement>('.gallery-count')!,abort=new AbortController(),{signal}=abort,reduced=matchMedia('(prefers-reduced-motion: reduce)')
   let value=0,target=0,selected=0,raf=0,previous=0,disposed=false,exiting=false,timer=0,touch:number|null=null,dragged=false

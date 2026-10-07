@@ -48,9 +48,23 @@ export class BodyParticles {
   draw(ctx:CanvasRenderingContext2D,width:number,height:number,dt:number){
     ctx.fillStyle='#000';ctx.fillRect(0,0,width,height)
     const sx=width/this.gw,sy=height/this.gh,decay=Math.exp(-dt*1.35),returnRate=Math.exp(-dt*1.7)
-    // Eight batches avoid per-dot style switches, shadows, and gradients.
+    // Batch halos by luminance. No per-particle blur or temporary canvases.
+    ctx.save()
+    ctx.globalCompositeOperation='lighter'
+    for(let ring=2;ring>=1;ring--){
+      ctx.fillStyle=ring===2?'rgba(205,225,255,.055)':'rgba(205,225,255,.16)'
+      ctx.beginPath()
+      for(let i=0;i<this.mask.length;i++){
+        if(this.mask[i]<.35)continue
+        const x=((i%this.gw)+.5+this.jitterX[i])*sx,y=(Math.floor(i/this.gw)+.5+this.jitterY[i])*sy
+        const size=(.7+this.light[i]*.65)*(ring===2?4:2.4)
+        ctx.moveTo(x+size,y);ctx.arc(x,y,size,0,Math.PI*2)
+      }
+      ctx.fill()
+    }
+    // Eight batches retain bright, distinct cores inside the glow.
     for(let bin=0;bin<8;bin++){
-      ctx.fillStyle=`rgb(${90+bin*23},${90+bin*23},${90+bin*23})`;ctx.beginPath()
+      ctx.fillStyle=`rgb(${125+bin*18},${125+bin*18},${125+bin*18})`;ctx.beginPath()
       for(let i=0;i<this.mask.length;i++){
         if(this.mask[i]<.35||Math.min(7,Math.floor(this.light[i]*8))!==bin)continue
         const x=((i%this.gw)+.5+this.jitterX[i])*sx,y=(Math.floor(i/this.gw)+.5+this.jitterY[i])*sy
@@ -59,7 +73,8 @@ export class BodyParticles {
       }
       ctx.fill()
     }
-    ctx.fillStyle='#aaa';ctx.beginPath()
+    ctx.restore()
+    ctx.fillStyle='#cbdcff';ctx.beginPath()
     for(let i=0;i<this.life.length;i+=2){
       this.life[i]*=decay;this.dx[i]*=returnRate;this.dy[i]*=returnRate
       if(this.life[i]<.035)continue

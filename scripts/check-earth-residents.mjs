@@ -38,10 +38,28 @@ try {
     }
   })
   assert.equal(await page.evaluate(() => window.fixture.residents.length), 6)
+  assert(await page.evaluate(()=>window.fixture.residents.every(r=>r.root.userData.gyaru)))
+  const activities=await page.evaluate(async()=>{
+    const {setupVillageActivities}=await import('/earth-activities.js'),f=window.fixture,a=setupVillageActivities(f.scene,f.garden,f.residents),seen=new Set()
+    const houses=f.scene.getObjectByName('Village homes and hobbies').children.length
+    for(let i=0;i<400;i++){a.update(.1,false,()=>false);f.residents.forEach(r=>{if(r.root.userData.activity)seen.add(r.root.userData.activity)})}
+    a.dispose();return {houses,seen:[...seen],clean:!f.scene.getObjectByName('Village homes and hobbies')&&f.residents.every(r=>!r.root.userData.activity)}
+  })
+  assert.equal(activities.houses,3);assert.equal(activities.seen.length,3);assert(activities.clean)
+  const times=await page.evaluate(async()=>{const {koreanVillageTime}=await import('/earth-time.js');return ['2026-10-01T00:00:00Z','2026-10-01T12:00:00Z'].map(t=>koreanVillageTime(new Date(t)))})
+  assert.equal(times[0].hour,9);assert.equal(times[0].daylight,1);assert(times[0].label.includes('오전'))
+  assert.equal(times[1].hour,21);assert.equal(times[1].daylight,0);assert(times[1].label.includes('오후'))
   const original = await page.evaluate(() => window.fixture.residents[0].normal.toArray())
   let point = await page.evaluate(() => window.fixture.locate())
   await page.mouse.click(point.x, point.y)
   await page.waitForFunction(() => !document.querySelector('.earth-conversation').hidden)
+  const speaker=await page.locator('#earth-resident-name').textContent()
+  await page.evaluate(()=>{for(let i=0;i<35;i++)window.fixture.life.update(.1)})
+  assert.notEqual(await page.locator('#earth-resident-name').textContent(),speaker,'One click automatically alternates speakers')
+  const line=await page.locator('#earth-dialogue').textContent()
+  await page.locator('.earth-conversation-controls summary').click()
+  await page.locator('#earth-random-chat').click()
+  assert.notEqual(await page.locator('#earth-dialogue').textContent(),line,'Button starts another random topic')
   const before = await page.evaluate(() => window.fixture.camera.position.toArray())
   await page.waitForTimeout(500)
   assert.notDeepEqual(await page.evaluate(() => window.fixture.camera.position.toArray()), before, 'Click starts a following-camera transition')

@@ -55,7 +55,7 @@ export function setupCaptureControl(root: HTMLElement) {
   }
 
   const currentExampleCamera = () => {
-    const exampleVideo = document.querySelector<HTMLVideoElement>('#water-camera, #hand-camera, #balloon-camera, #rubber-camera, #shampoo-camera, #doodle-camera, #aquarium-camera, #sniper-camera')
+    const exampleVideo = document.querySelector<HTMLVideoElement>('#water-camera, #hand-camera, #balloon-camera, #rubber-camera, #shampoo-camera, #doodle-camera, #aquarium-camera, #sniper-camera, #body-camera, #lab-camera')
     const stream = exampleVideo?.srcObject
     if (exampleVideo && stream instanceof MediaStream && stream.getVideoTracks().some((track) => track.readyState === 'live')) {
       const isWaterTouch = exampleVideo.id === 'water-camera'
@@ -65,12 +65,14 @@ export function setupCaptureControl(root: HTMLElement) {
       const isDoodle = exampleVideo.id === 'doodle-camera'
       const isAquarium = exampleVideo.id === 'aquarium-camera'
       const isSniper = exampleVideo.id === 'sniper-camera'
+      const isBody = exampleVideo.id === 'body-camera'
+      const isLab = exampleVideo.id === 'lab-camera'
       return {
         stream,
         video: exampleVideo,
         internal: false,
-        prefix: isWaterTouch ? 'watertouch' : isBalloon ? 'balloon' : isRubber ? 'rubber-human' : isShampoo ? 'shampoo' : isDoodle ? 'doodleface' : isAquarium ? 'aquarium' : isSniper ? 'sniper' : 'lemonade',
-        renderCanvas: isWaterTouch
+        prefix: isLab ? 'lab' : isBody ? (root.dataset.activeExample || 'body') : isWaterTouch ? 'watertouch' : isBalloon ? 'balloon' : isRubber ? 'rubber-human' : isShampoo ? 'shampoo' : isDoodle ? 'doodleface' : isAquarium ? 'aquarium' : isSniper ? 'sniper' : 'lemonade',
+        renderCanvas: isLab ? document.querySelector<HTMLCanvasElement>('#lab-flowers') || undefined : isBody ? document.querySelector<HTMLCanvasElement>('#body-canvas') || undefined : isWaterTouch
           ? document.querySelector<HTMLCanvasElement>('#water-surface') || undefined
           : isBalloon
             ? document.querySelector<HTMLCanvasElement>('#balloon-overlay') || undefined

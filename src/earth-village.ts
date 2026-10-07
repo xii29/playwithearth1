@@ -5,6 +5,8 @@ import { analyzeMiniature, buildMiniature } from './earth-miniature'
 import { setupResidentLife, type Resident } from './earth-residents'
 import { setupSpaceEdition } from './earth-space'
 import { setupVillageMusic } from './earth-music'
+import { koreanVillageTime } from './earth-time'
+import { setupVillageActivities } from './earth-activities'
 
 type Arrival = { resident: Resident; started: number; from: THREE.Vector3; rotation: THREE.Quaternion; scale: number }
 const LIMIT = 24
@@ -26,12 +28,25 @@ export function setupEarthVillage(root: HTMLElement) {
   const controls = new OrbitControls(camera, canvas)
   controls.enablePan = false; controls.enableDamping = true; controls.dampingFactor = .075
   controls.minDistance = 5.2; controls.maxDistance = 26; controls.rotateSpeed = .6
-  scene.add(new THREE.HemisphereLight(0xd4d8ff, 0x393266, 1.7))
+  const ambient=new THREE.HemisphereLight(0xd4d8ff, 0x393266, 1.7);scene.add(ambient)
   const sunlight = new THREE.DirectionalLight(0xe2d7ff, 2.1); sunlight.position.set(-3, 8, -6); scene.add(sunlight)
   const fill = new THREE.DirectionalLight(0x85eee7, .9); fill.position.set(5, 1, 6); scene.add(fill)
   const garden = createEarthGarden(scene), residents: Resident[] = [], events = new AbortController()
   const space = setupSpaceEdition(scene, root, residents, garden)
+  const activities=setupVillageActivities(scene,garden,residents)
   const stopMusic = setupVillageMusic($<HTMLButtonElement>('music'))
+  const clock=document.createElement('div');clock.className='earth-korea-clock';clock.setAttribute('aria-label','한국 시간');root.append(clock)
+  let clockMinute=-1
+  const syncClock=()=>{
+    const now=new Date(),minute=Math.floor(now.getTime()/60000);if(minute===clockMinute)return;clockMinute=minute
+    const {daylight,label,period}=koreanVillageTime(now)
+    clock.textContent=`한국 · ${label} · ${period}`;root.dataset.timeOfDay=period
+    scene.background=new THREE.Color('#11152f').lerp(new THREE.Color('#afddea'),daylight)
+    ambient.intensity=.85+daylight*.95;sunlight.intensity=.4+daylight*1.9
+    sunlight.color.set(daylight>0&&daylight<1?'#ffc29b':daylight?'#fff3da':'#aebeff')
+    fill.intensity=.35+daylight*.35
+    space.setDaylight(daylight)
+  };syncClock()
   let disposed = false, animation = 0, lastTime = performance.now(), elapsed = 0
   let stream: MediaStream | null = null, artwork: HTMLCanvasElement | null = null
   let session = 0, imageRequest = 0, timer = 0, deadline = 0, processing = false, cameraLoading = false
@@ -184,9 +199,10 @@ export function setupEarthVillage(root: HTMLElement) {
   const tick = (time: number) => {
     if (disposed || document.hidden) { animation = 0; return }
     animation = requestAnimationFrame(tick)
+    syncClock()
     const delta = Math.min(.05, (time - lastTime) / 1000); lastTime = time; elapsed += delta
     if (!dialog.open) residents.forEach((resident) => {
-      if (life.ownsMovement(resident)) return
+      if (life.ownsMovement(resident)||activities.ownsMovement(resident)) return
       const frightened = space.frightened(resident)
       if (!frightened && elapsed > resident.turnAt) { resident.direction.applyAxisAngle(resident.normal, (Math.random() - .5) * 1.6); resident.turnAt = elapsed + 3 + Math.random() * 5 }
       for (const other of residents) {
@@ -196,7 +212,7 @@ export function setupEarthVillage(root: HTMLElement) {
       }
       next.copy(resident.normal).addScaledVector(resident.direction, delta * (frightened ? .115 : .026)).normalize()
       const blocked = residents.some(other => other !== resident && next.distanceToSquared(other.normal) < .018 && next.distanceToSquared(other.normal) < resident.normal.distanceToSquared(other.normal))
-      const radius = blocked ? null : garden.stepRadius(next)
+      const radius = blocked||activities.blocked(next) ? null : garden.stepRadius(next)
       if (radius !== null) { resident.normal.copy(next); resident.radius = radius } else resident.direction.applyAxisAngle(resident.normal, 1.4)
       resident.direction.addScaledVector(resident.normal, -resident.direction.dot(resident.normal)).normalize(); orient(resident)
       const step = elapsed * (frightened ? 14 : 7) + resident.phase
@@ -216,7 +232,7 @@ export function setupEarthVillage(root: HTMLElement) {
         count.textContent = String(residents.length); status.textContent = `${residents.length}번째 주민이 입주했어요. 지구를 돌려 만나보세요!`; join.disabled = residents.length >= LIMIT; join.focus()
       }
     }
-    life.update(delta); space.update(delta, !!arrival || dialog.open || !residentsReady || life.interacting()); controls.update(delta); garden.update(elapsed, camera.position); renderer.render(scene, camera)
+    activities.update(delta,!!arrival||dialog.open||!residentsReady,r=>life.ownsMovement(r)||space.frightened(r));life.update(delta); space.update(delta, !!arrival || dialog.open || !residentsReady || life.interacting()); controls.update(delta); garden.update(elapsed, camera.position); renderer.render(scene, camera)
   }
   on(document, 'visibilitychange', () => {
     if (document.hidden) { cancelAnimationFrame(animation); animation = 0; stopCountdown() }
@@ -225,7 +241,7 @@ export function setupEarthVillage(root: HTMLElement) {
   animation = requestAnimationFrame(tick)
   return () => {
     disposed = true; session++; imageRequest++; captureTask?.abort(); events.abort(); stopCountdown(); cancelAnimationFrame(animation); observer.disconnect(); stopCamera()
-    life.dispose(); space.dispose(); stopMusic(); if (dialog.open) dialog.close(); controls.dispose()
+    activities.dispose();life.dispose(); space.dispose(); stopMusic(); clock.remove(); if (dialog.open) dialog.close(); controls.dispose()
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>()
     scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh || object instanceof THREE.Points)) return

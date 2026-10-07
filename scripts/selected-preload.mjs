@@ -6,7 +6,8 @@ const entries = {
   aquarium: 'aquarium', sniper: 'sniper', earth: 'earth-village',
   'body-fx': 'body-cloud-example',
   afterglow: 'body-cloud-example',
-  money: 'body-examples',
+  fireworks: 'body-cloud-example',
+  money: 'money-example',
 }
 
 // Fetch only the selected module graph early. modulepreload does not execute

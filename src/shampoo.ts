@@ -1,12 +1,4 @@
-import { FaceLandmarker, FilesetResolver, ImageSegmenter } from '@mediapipe/tasks-vision'
-import { createModelPair } from './model-lifecycle'
-
-const WASM_ROOT = `${import.meta.env.BASE_URL}mediapipe/wasm`
-const FACE_MODEL = `${import.meta.env.BASE_URL}mediapipe/models/face_landmarker.task`
-// This is MediaPipe's real selfie multi-class confidence-mask model. The
-// implementation below derives the person confidence from its actual output;
-// no landmark outline is ever substituted for a missing HumanSeg frame.
-const SELFIE_MODEL = `${import.meta.env.BASE_URL}mediapipe/models/selfie_multiclass.tflite`
+import { VisionFrameWorker } from './vision-frame-worker'
 
 type Landmark = { x: number; y: number; z: number }
 type Point = { x: number; y: number }
@@ -68,10 +60,9 @@ export function setupShampoo(root: HTMLElement) {
 
   const lowPowerDevice = window.matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 4)
   const maxPixelRatio = lowPowerDevice ? 1.2 : 1.5
-  // Denser than the interaction layer, but still capped by device class so the
-  // fuller foam silhouette does not turn into a sustained rendering cost.
-  const ambientLimit = lowPowerDevice ? 132 : 224
-  const permanentLimit = lowPowerDevice ? 390 : 600
+  // Dense lather covers the hair; the face-relative draw guard protects the forehead.
+  const ambientLimit = lowPowerDevice ? 330 : 540
+  const permanentLimit = lowPowerDevice ? 220 : 340
   const spriteCache = new Map<number, HTMLCanvasElement>()
   const hands = new Map<string, HandState>()
   let ambient: AmbientBubble[] = []
@@ -87,8 +78,7 @@ export function setupShampoo(root: HTMLElement) {
   let height = 1
   let pixelRatio = 1
   let cameraStream: MediaStream | null = null
-  let faceLandmarker: FaceLandmarker | null = null
-  let segmenter: ImageSegmenter | null = null
+  let visionWorker: VisionFrameWorker | null = null
   let handWorker: Worker | null = null
   let workerReady = false
   let animationFrame = 0
@@ -106,7 +96,7 @@ export function setupShampoo(root: HTMLElement) {
   let leverStartY = 0
   let leverPulling = false
   let leverTriggered = false
-  let segmentationValues: Float32Array | null = null
+  let visionVideoTime = -1
   const attachedPointScratch: Point = { x: 0, y: 0 }
 
   const say = (message: string) => {
@@ -156,27 +146,21 @@ export function setupShampoo(root: HTMLElement) {
     const center = diameter * 0.5
     const puff = (x: number, y: number, radius: number) => {
       const gradient = spriteContext.createRadialGradient(x - radius * 0.32, y - radius * 0.38, radius * 0.06, x, y, radius)
-      gradient.addColorStop(0, 'rgba(255,255,255,1)')
-      gradient.addColorStop(0.42, 'rgba(255,255,255,.97)')
-      gradient.addColorStop(0.76, 'rgba(226,238,239,.74)')
-      gradient.addColorStop(1, 'rgba(184,207,211,.12)')
+      gradient.addColorStop(0, '#ffffff')
+      gradient.addColorStop(0.55, '#f7f9f7')
+      gradient.addColorStop(1, '#dce5e3')
       spriteContext.beginPath()
       spriteContext.arc(x, y, radius, 0, Math.PI * 2)
       spriteContext.fillStyle = gradient
       spriteContext.fill()
-      spriteContext.lineWidth = Math.max(.65, radius * .07)
-      spriteContext.strokeStyle = 'rgba(255,255,255,.9)'
-      spriteContext.stroke()
     }
-    // Overlapping white puffs give each cached sprite a soft whipped-foam
-    // silhouette while retaining the cheap one-draw-per-bubble renderer.
-    puff(center + bucket * .12, center + bucket * .15, bucket * .84)
-    puff(center - bucket * .31, center + bucket * .05, bucket * .53)
-    puff(center + bucket * .12, center - bucket * .34, bucket * .49)
-    spriteContext.beginPath()
-    spriteContext.ellipse(center - bucket * 0.29, center - bucket * 0.3, bucket * 0.22, bucket * 0.12, -0.55, 0, Math.PI * 2)
-    spriteContext.fillStyle = 'rgba(255,255,255,0.68)'
-    spriteContext.fill()
+    // Opaque, overlapping lobes form creamy lather without glassy rims or glints.
+    puff(center, center + bucket * .12, bucket * .7)
+    puff(center - bucket * .48, center + bucket * .08, bucket * .42)
+    puff(center + bucket * .44, center + bucket * .14, bucket * .44)
+    puff(center + bucket * .28, center - bucket * .34, bucket * .43)
+    puff(center - bucket * .2, center - bucket * .42, bucket * .46)
+    puff(center - bucket * .12, center + bucket * .04, bucket * .48)
     spriteCache.set(bucket, sprite)
     return sprite
   }
@@ -245,7 +229,7 @@ export function setupShampoo(root: HTMLElement) {
   }
 
   const emitBurst = (center: Point, time: number, falling = false) => {
-    const count = lowPowerDevice ? 15 : 23
+    const count = lowPowerDevice ? 10 : 15
     for (let index = 0; index < count; index += 1) {
       const angle = (index / count) * Math.PI * 2 + Math.random() * 0.42
       const radius = (9 + Math.random() * 42) * (index % 3 === 0 ? 1.18 : 1)
@@ -342,23 +326,6 @@ export function setupShampoo(root: HTMLElement) {
     for (const [id, hand] of hands) if (!seen.has(id) && time - hand.lastSeen > 210) hands.delete(id)
   }
 
-  const updateFace = (time: number, gestureActive: boolean) => {
-    const interval = 1000 / (gestureActive ? (lowPowerDevice ? 10 : 13) : (lowPowerDevice ? 13 : 17))
-    if (!faceLandmarker || time - faceInferenceAt < interval) return false
-    faceInferenceAt = time
-    const result = faceLandmarker.detectForVideo(video, time)
-    const detected = result.faceLandmarks[0] as Landmark[] | undefined
-    if (!detected?.length) return true
-    if (!face || face.length !== detected.length) face = detected.map((item) => ({ ...item }))
-    else detected.forEach((item, index) => {
-      face![index].x = lerp(face![index].x, item.x, 0.58)
-      face![index].y = lerp(face![index].y, item.y, 0.58)
-      face![index].z = lerp(face![index].z, item.z, 0.58)
-    })
-    faceSeenAt = time
-    return true
-  }
-
   const makeAmbient = (mask: Float32Array, maskWidth: number, maskHeight: number) => {
     if (performance.now() < rinseUntil) { ambient = []; humanSegValid = true; return }
     if (!face) { humanSegValid = false; ambient = []; return }
@@ -368,7 +335,7 @@ export function setupShampoo(root: HTMLElement) {
     const rawY = (screenY: number) => clamp((screenY - (height - frame.drawnHeight) * 0.5) / frame.drawnHeight, 0, 1)
     const rawX = (screenX: number) => clamp(1 - (screenX - (width - frame.drawnWidth) * 0.5) / frame.drawnWidth, 0, 1)
     const top = rawY(forehead - Math.abs(bottom.y - forehead) * 0.88)
-    const lower = rawY(forehead + Math.abs(bottom.y - forehead) * 0.11)
+    const lower = rawY(Math.max(project(face[10]).y, left.y, right.y))
     const faceSpan = Math.abs(right.x - left.x)
     const leftBound = rawX(Math.min(left.x, right.x) - faceSpan * 0.4)
     const rightBound = rawX(Math.max(left.x, right.x) + faceSpan * 0.4)
@@ -397,7 +364,8 @@ export function setupShampoo(root: HTMLElement) {
     humanSegValid = true
     const next: AmbientBubble[] = []
     for (let index = 0; index < ambientLimit; index += 1) {
-      const candidate = candidates[(index * 47 + Math.floor(index / 7) * 19) % candidates.length]
+      // Spread the denser layer across the full mask instead of repeating a stride.
+      const candidate = candidates[Math.floor((index + 0.5) * candidates.length / ambientLimit)]
       let closest = boundaries[0]
       let closestDistance = Infinity
       boundaries.forEach((boundary) => {
@@ -407,36 +375,23 @@ export function setupShampoo(root: HTMLElement) {
       const normal = closest.normal
       const edge = clamp(1 - Math.sqrt(closestDistance) / 16, 0, 1)
       next.push({
-        u: candidate.x / (maskWidth - 1), v: candidate.y / (maskHeight - 1), size: 5 + ((index * 13) % 13), phase: index * 1.71,
+        u: candidate.x / (maskWidth - 1), v: candidate.y / (maskHeight - 1), size: 7 + ((index * 7) % 9), phase: index * 1.71,
         normal, tangent: { x: -normal.y, y: normal.x }, edge,
       })
     }
     ambient = next
   }
 
-  const updateSegmentation = (time: number, gestureActive: boolean) => {
-    const interval = gestureActive ? (lowPowerDevice ? 520 : 390) : (lowPowerDevice ? 260 : 180)
-    if (!segmenter || time - segmentInferenceAt < interval || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
-    segmentInferenceAt = time
-    const result = segmenter.segmentForVideo(video, time)
-    try {
-      const masks = result.confidenceMasks
-      if (!masks?.length) { humanSegValid = false; ambient = []; return }
-      const primary = masks[0]
-      const first = primary.getAsFloat32Array()
-      if (!segmentationValues || segmentationValues.length !== first.length) segmentationValues = new Float32Array(first.length)
-      const values = segmentationValues
-      if (masks.length > 1) {
-        // The selfie model's first class is background; invert it to retain
-        // its true person confidence rather than manufacturing a contour.
-        for (let index = 0; index < first.length; index += 1) values[index] = 1 - first[index]
-      } else values.set(first)
-      makeAmbient(values, primary.width, primary.height)
-    } catch {
-      humanSegValid = false
-      ambient = []
-    } finally {
-      result.close()
+  const updateVision = (time: number, gestureActive: boolean) => {
+    if (!visionWorker || video.readyState < 2 || video.currentTime === visionVideoTime) return
+    const faceInterval = 1000 / (gestureActive ? (lowPowerDevice ? 10 : 13) : (lowPowerDevice ? 13 : 17))
+    const segmentInterval = gestureActive ? (lowPowerDevice ? 520 : 390) : (lowPowerDevice ? 260 : 180)
+    const runFace = time - faceInferenceAt >= faceInterval
+    const runSegment = time - segmentInferenceAt >= segmentInterval
+    if ((runFace || runSegment) && visionWorker.submit(video, time, { face: runFace, segment: runSegment })) {
+      visionVideoTime = video.currentTime
+      if (runFace) faceInferenceAt = time
+      if (runSegment) segmentInferenceAt = time
     }
   }
 
@@ -445,7 +400,11 @@ export function setupShampoo(root: HTMLElement) {
     if (!handWorker || !workerReady || handBusy || time - handSubmittedAt < interval || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
     handSubmittedAt = time
     handBusy = true
-    void createImageBitmap(video).then((bitmap) => handWorker?.postMessage({ type: 'frame', bitmap, timestamp: time }, [bitmap])).catch(() => { handBusy = false })
+    const current = handWorker
+    void createImageBitmap(video).then((bitmap) => {
+      if (disposed || handWorker !== current) { bitmap.close(); return }
+      current.postMessage({ type: 'frame', bitmap, timestamp: time }, [bitmap])
+    }).catch(() => { if (handWorker === current) handBusy = false })
   }
 
   const continueGraceGestures = (time: number, pinchActive: boolean) => {
@@ -518,7 +477,22 @@ export function setupShampoo(root: HTMLElement) {
       context.drawImage(video, frame.offsetX, frame.offsetY, frame.drawnWidth, frame.drawnHeight)
       context.restore()
     }
-    if (humanSegValid && time >= rinseUntil) {
+    const basis = faceBasis(frame)
+    const forehead = face ? projectInFrame(face[10], frame) : null
+    const freshFace = time - faceSeenAt <= 330
+    // Measure in the tilted face's own axes, and include the entire sprite's
+    // radius so even its edges cannot spill onto the forehead.
+    const foamAllowed = (x: number, y: number, radius: number, hairOnly: boolean) => {
+      if (!basis || !forehead || !freshFace) return false
+      const dx = x - forehead.x, dy = y - forehead.y
+      const down = dx * basis.yUnit.x + dy * basis.yUnit.y
+      const across = dx * basis.xUnit.x + dy * basis.xUnit.y
+      const margin = basis.yLength * .035
+      if (hairOnly) return down + radius < -margin
+      return Math.abs(across) > basis.xLength * .58 + radius ||
+        down + radius < -margin || down - radius > basis.yLength * .38
+    }
+    if (humanSegValid && time >= rinseUntil && freshFace) {
       ambient.forEach((bubble) => {
         const pointX = frame.offsetX + (1 - bubble.u) * frame.drawnWidth
         const pointY = frame.offsetY + bubble.v * frame.drawnHeight
@@ -528,9 +502,9 @@ export function setupShampoo(root: HTMLElement) {
         const positionX = pointX - bubble.tangent.x * wave * 2 - bubble.normal.x * (bob + edgePush)
         const positionY = pointY + bubble.tangent.y * wave * 2 + bubble.normal.y * (bob + edgePush)
         const sprite = createSprite(bubble.size)
-        // Double the default head foam only; keep sprite caching and counts.
-        const diameter = (bubble.size * 2 + 10) * 2
-        context.globalAlpha = 0.81 + bubble.edge * 0.15
+        const diameter = (bubble.size * 2 + 10) * 1.5
+        if (!foamAllowed(positionX, positionY, diameter * .5, true)) return
+        context.globalAlpha = 1
         context.drawImage(sprite, positionX - diameter * 0.5, positionY - diameter * 0.5, diameter, diameter)
       })
     }
@@ -539,7 +513,6 @@ export function setupShampoo(root: HTMLElement) {
       if (!bubble.falling || (time - bubble.born < 1900 && bubble.point.y + (time - bubble.born) * bubble.fallSpeed / 1000 < height + 44)) bubbles[nextBubbleIndex++] = bubble
     })
     bubbles.length = nextBubbleIndex
-    const basis = faceBasis(frame)
     bubbles.forEach((bubble) => {
       const lifetime = time - bubble.born
       const attached = attachedPoint(bubble, basis, frame)
@@ -550,8 +523,9 @@ export function setupShampoo(root: HTMLElement) {
       const size = bubble.size * pulse * (0.6 + age * 0.4)
       const sprite = createSprite(size)
       const diameter = size * 2 + 10
+      if (!foamAllowed(pointX, pointY, diameter * .5, false)) return
       const fade = bubble.falling ? clamp(1 - Math.max(0, lifetime - 950) / 950, 0, 1) : 1
-      context.globalAlpha = (bubble.kind === 'trail' ? 0.86 : 0.93) * fade
+      context.globalAlpha = fade
       context.drawImage(sprite, pointX - diameter * 0.5, pointY - diameter * 0.5, diameter, diameter)
     })
     drawWater(time)
@@ -591,8 +565,7 @@ export function setupShampoo(root: HTMLElement) {
     const activeGesture = pinchActive || fistActive
     emitWater(time)
     continueGraceGestures(time, pinchActive)
-    const faceRan = updateFace(time, activeGesture)
-    if (!faceRan) updateSegmentation(time, activeGesture)
+    updateVision(time, activeGesture)
     submitHandFrame(time, pinchActive ? 'pinch' : fistActive ? 'fist' : 'idle')
     draw(time)
     lastFrameAt = time
@@ -614,15 +587,21 @@ export function setupShampoo(root: HTMLElement) {
       video.srcObject = stream
       await video.play()
       if (disposed || request !== cameraRequest) return
-      const vision = await FilesetResolver.forVisionTasks(WASM_ROOT)
+      visionWorker = new VisionFrameWorker(new Worker(new URL('./shampoo-vision.worker.ts', import.meta.url), { type: 'module' }), {}, message => {
+        const detected = message.landmarks as Landmark[] | undefined
+        if (detected?.length) {
+          if (!face || face.length !== detected.length) face = detected.map(item => ({ ...item }))
+          else detected.forEach((item, index) => {
+            face![index].x = lerp(face![index].x, item.x, .58)
+            face![index].y = lerp(face![index].y, item.y, .58)
+            face![index].z = lerp(face![index].z, item.z, .58)
+          })
+          faceSeenAt = performance.now()
+        }
+        if (message.mask) makeAmbient(message.mask, message.width, message.height)
+      }, () => say('얼굴 인식이 중단됐어요. 카메라를 다시 시작해 주세요.'))
+      await visionWorker.ready
       if (disposed || request !== cameraRequest) return
-      const [nextFace, nextSegmenter] = await createModelPair(
-        FaceLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: FACE_MODEL }, runningMode: 'VIDEO', numFaces: 1, minFaceDetectionConfidence: 0.55, minTrackingConfidence: 0.5 }),
-        ImageSegmenter.createFromOptions(vision, { baseOptions: { modelAssetPath: SELFIE_MODEL }, runningMode: 'VIDEO', outputConfidenceMasks: true, outputCategoryMask: false }),
-      )
-      if (disposed || request !== cameraRequest) { nextFace.close(); nextSegmenter.close(); return }
-      faceLandmarker = nextFace
-      segmenter = nextSegmenter
       handWorker = new Worker(new URL('./shampoo-hand.worker.ts', import.meta.url), { type: 'module' })
       handWorker.addEventListener('message', (event: MessageEvent<WorkerMessage>) => {
         const message = event.data
@@ -639,6 +618,8 @@ export function setupShampoo(root: HTMLElement) {
       lastFrameAt = performance.now()
       animationFrame = requestAnimationFrame(loop)
     } catch {
+      visionWorker?.close(); visionWorker = null
+      handWorker?.terminate(); handWorker = null
       say('카메라 또는 AI 모델을 시작하지 못했어요. 권한과 네트워크를 확인해 주세요.')
       cameraStream?.getTracks().forEach((track) => track.stop())
       cameraStream = null
@@ -657,8 +638,9 @@ export function setupShampoo(root: HTMLElement) {
     handWorker = null
     workerReady = false
     handBusy = false
-    faceLandmarker?.close(); faceLandmarker = null
-    segmenter?.close(); segmenter = null
+    visionWorker?.close(); visionWorker = null
+    visionVideoTime = -1; faceInferenceAt = segmentInferenceAt = -Infinity
+    face = null; faceSeenAt = -Infinity
     cameraStream?.getTracks().forEach((track) => track.stop())
     cameraStream = null
     video.srcObject = null

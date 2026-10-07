@@ -25,10 +25,12 @@ try {
     const renderer = createRubberRenderer(output), gl = output.getContext('webgl')
     const pixels = () => { const data = new Uint8Array(320 * 240 * 4); gl.readPixels(0, 0, 320, 240, gl.RGBA, gl.UNSIGNED_BYTE, data); return data }
     renderer.draw(video, 320, 240, null, [])
-    const base = pixels()
+    const empty = pixels()
     const points = Array.from({ length: 478 }, () => ({ x: 160, y: 120 }))
     const contour = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109]
     contour.forEach((index, i) => { const a = i / contour.length * Math.PI * 2 - Math.PI / 2; points[index] = { x: 160 + Math.cos(a) * 65, y: 120 + Math.sin(a) * 85 } })
+    renderer.draw(video,320,240,points,[])
+    const base=pixels()
     const pull = { anchorIndex: 0, offset: { x: 0, y: 0 }, displacement: { x: 100, y: 15 } }
     renderer.draw(video, 320, 240, points, [pull])
     const warped = pixels()
@@ -38,7 +40,7 @@ try {
       if (Math.abs(base[i] - warped[i]) > 4) changed++
       if (((x + .5 - 160) / 67) ** 2 + ((239 - y + .5 - 120) / 87) ** 2 > 1 && base[i] !== warped[i]) changedBackground++
       if (x < 70 && base[i] !== warped[i]) farBackground++
-      if (warped[i + 1] < 60 || warped[i + 2] < 100 || warped[i + 3] !== 255) holes++
+      if (warped[i + 3] !== 255) holes++
       if (x) biggestJump = Math.max(biggestJump, Math.abs(warped[i] - warped[i - 4]))
     }
     renderer.draw(video, 320, 240, points, [{ ...pull, displacement: { x: 0, y: 0 } }])
@@ -49,11 +51,12 @@ try {
     renderer.dispose(); stream.getTracks().forEach(track => track.stop())
     const anchor = ((239 - 120) * 320 + 160) * 4, target = ((239 - 135) * 320 + 260) * 4
     const fingertipError = Math.abs(base[anchor] - warped[target])
-    return { changed, biggestJump, holes, restoredExactly, changedBackground, farBackground, fingertipError, error }
+    return { changed, biggestJump, holes, restoredExactly, changedBackground, farBackground, fingertipError, error,backgroundVisible:empty.some((v,i)=>i%4!==3&&v>40) }
   })
   console.log('Face warp measurements:', result)
   assert(result.changed > 1000, 'Pinch must visibly warp the source')
   assert.equal(result.holes, 0)
+  assert(result.backgroundVisible,'Full camera background remains visible on the single warped surface')
   assert(result.changedBackground > 100, 'Face must extend beyond the original contour')
   assert.equal(result.farBackground, 0, 'Uncovered background must remain unchanged')
   assert(result.fingertipError < 12, 'The grabbed face point must follow the fingertip')

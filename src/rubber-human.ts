@@ -359,7 +359,7 @@ export function setupRubberHuman(root: HTMLElement) {
       const videoChanged = video.currentTime !== lastRenderedVideoTime
       const effectActive = grabs.size > 0
       if (renderDirty || videoChanged || effectActive) {
-        renderer.draw(video, width, height, effectActive ? points : null, grabs.values())
+        renderer.draw(video, width, height, points, grabs.values())
         lastRenderedVideoTime = video.currentTime
         renderDirty = false
       }

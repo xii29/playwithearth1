@@ -1,7 +1,5 @@
-import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
+import { VisionFrameWorker } from './vision-frame-worker'
 
-const WASM_ROOT = `${import.meta.env.BASE_URL}mediapipe/wasm`
-const MODEL_PATH = `${import.meta.env.BASE_URL}mediapipe/models/hand_landmarker.task`
 const FINGERTIP_INDICES = [4, 8, 12, 16, 20]
 
 type Landmark = { x: number; y: number; z: number }
@@ -288,14 +286,13 @@ export function setupWaterTouch(root: HTMLElement) {
   }
 
   const lowPowerDevice = window.matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 4)
-  // Water simulation continues at display rate; 24fps landmarks avoid blocking
-  // the main thread with model inference on every visual frame.
+  // Water simulation stays at display rate while the worker tracks new camera
+  // frames independently, with at most one inference frame in flight.
   const inferenceInterval = 1000 / (lowPowerDevice ? 20 : 24)
   const maximumPixelRatio = lowPowerDevice ? 1.25 : 1.6
   const touches = new Map<string, TouchPoint>()
 
-  let landmarker: HandLandmarker | null = null
-  let visionPromise: ReturnType<typeof FilesetResolver.forVisionTasks> | null = null
+  let tracking: VisionFrameWorker | null = null
   let cameraStream: MediaStream | null = null
   let animationFrame = 0
   let disposed = false
@@ -410,15 +407,18 @@ export function setupWaterTouch(root: HTMLElement) {
   }
 
   const updateTracking = (time: number) => {
-    if (!cameraActive || !landmarker || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+    if (!cameraActive || !tracking || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
     if (video.currentTime === lastVideoTime || time - lastDetectionTime < inferenceInterval) return
-    lastVideoTime = video.currentTime
-    lastDetectionTime = time
-    const result = landmarker.detectForVideo(video, time)
+    if (tracking.submit(video, time)) { lastVideoTime = video.currentTime; lastDetectionTime = time }
+  }
+
+  const receiveTracking = (result: { landmarks: Landmark[][]; handedness: string[] }) => {
+    if (!cameraActive) return
+    const time = performance.now()
     let detectedFingerCount = 0
     let fistCount = 0
     const handLabels = result.landmarks.map((_, handIndex) => (
-      result.handedness[handIndex]?.[0]?.categoryName?.toLowerCase() === 'left' ? 'left' : 'right'
+      result.handedness[handIndex] === 'left' ? 'left' : 'right'
     ))
 
     result.landmarks.forEach((rawLandmarks, handIndex) => {
@@ -473,35 +473,10 @@ export function setupWaterTouch(root: HTMLElement) {
     })
   }
 
-  const getVision = () => {
-    visionPromise ??= FilesetResolver.forVisionTasks(WASM_ROOT)
-    return visionPromise
-  }
-
-  const ensureLandmarker = async () => {
-    if (landmarker) return landmarker
-    say('열 손가락을 인식할 모델을 준비하고 있어요…')
-    const vision = await getVision()
-    if (disposed) throw new Error('WaterTouch has been disposed.')
-    const created = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODEL_PATH },
-      runningMode: 'VIDEO',
-      numHands: 2,
-      minHandDetectionConfidence: 0.55,
-      minHandPresenceConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    })
-    if (disposed) {
-      created.close()
-      throw new Error('WaterTouch has been disposed.')
-    }
-    landmarker = created
-    return created
-  }
-
   const stopCamera = () => {
     cameraRequest += 1
     cameraActive = false
+    tracking?.close(); tracking = null
     touches.clear()
     cameraStream?.getTracks().forEach((track) => track.stop())
     cameraStream = null
@@ -539,9 +514,12 @@ export function setupWaterTouch(root: HTMLElement) {
       cameraStream = stream
       video.srcObject = stream
       await video.play()
+      if (disposed || request !== cameraRequest) return
       cameraActive = true
       root.classList.add('is-camera-active')
-      await ensureLandmarker()
+      tracking = new VisionFrameWorker(new Worker(new URL('./shampoo-hand.worker.ts', import.meta.url), { type: 'module' }), { water: true }, receiveTracking,
+        () => say('손 인식이 중단됐어요. 카메라를 다시 시작해 주세요.'))
+      await tracking.ready
       if (disposed || request !== cameraRequest) return
       lastVideoTime = -1
       lastDetectionTime = -Infinity
@@ -549,6 +527,7 @@ export function setupWaterTouch(root: HTMLElement) {
       toggleButton.classList.add('is-active')
       say('손끝을 움직이거나 주먹을 쥐고, 카메라 가까이 가져와 보세요.')
     } catch {
+      tracking?.close(); tracking = null
       cameraStream?.getTracks().forEach((track) => track.stop())
       cameraStream = null
       cameraActive = false
@@ -591,7 +570,7 @@ export function setupWaterTouch(root: HTMLElement) {
     toggleButton.removeEventListener('click', toggleCamera)
     cameraStream?.getTracks().forEach((track) => track.stop())
     video.srcObject = null
-    landmarker?.close()
+    tracking?.close()
     renderer?.dispose()
   }
 }

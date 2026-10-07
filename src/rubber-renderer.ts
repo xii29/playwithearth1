@@ -2,9 +2,8 @@ type Point = { x: number; y: number }
 type Pull = { anchorIndex: number; offset: Point; displacement: Point }
 const FACE_CONTOUR = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109]
 
-// Stretch a live face layer over the unwarped camera. The source-space mask
-// travels with the face, allowing its silhouette to follow the pinch outside
-// the original contour. Background is never sampled through the deformation.
+// One continuous camera surface: local pulls stretch the face without a
+// second unwarped camera/face layer appearing beneath it.
 export function createRubberRenderer(canvas: HTMLCanvasElement) {
   const gl = canvas.getContext('webgl', { alpha: true, antialias: false })
   if (!gl) throw new Error('WebGL을 사용할 수 없습니다.')
@@ -59,11 +58,9 @@ export function createRubberRenderer(canvas: HTMLCanvasElement) {
       vec2 p = v_screen * u_size;
       vec2 warped = unpull(p, u_pull[1], u_radius.y);
       warped = unpull(warped, u_pull[0], u_radius.x);
-      vec2 uv = (p - u_cover.xy) / u_cover.zw;
       vec2 faceUv = (warped - u_cover.xy) / u_cover.zw;
-      vec4 background = texture2D(u_camera, vec2(1. - uv.x, 1. - uv.y));
       vec4 face = texture2D(u_camera, vec2(1. - faceUv.x, 1. - faceUv.y));
-      gl_FragColor = mix(background, face, smoothstep(0., .95, faceWeight(warped)));
+      gl_FragColor = face;
     }
   `)
   const program = gl.createProgram()!
@@ -160,7 +157,7 @@ export function createRubberRenderer(canvas: HTMLCanvasElement) {
         const stretch = Math.hypot(pull.displacement.x, pull.displacement.y)
         handles[i * 4] = anchor.x + pull.offset.x; handles[i * 4 + 1] = anchor.y + pull.offset.y
         handles[i * 4 + 2] = pull.displacement.x; handles[i * 4 + 3] = pull.displacement.y
-        radii[i] = stretch > .01 ? faceWidth * .62 + stretch * .22 : 0
+        radii[i] = stretch > .01 ? faceWidth * .42 : 0
         i++
       }
     }
