@@ -54,8 +54,8 @@ export function guestbookErrorMessage(error: unknown, writing: boolean): string 
   const failure = error instanceof GuestbookRequestError ? error : new GuestbookRequestError('NETWORK')
   let reason: string
   if (failure.code === 'TIMEOUT') reason = '서버 응답이 늦어 요청을 중단했어요. 잠시 후 다시 시도해 주세요.'
-  else if (failure.status === 401 || failure.code === 'PGRST301' || failure.code === 'PGRST303') reason = '방명록 연결 키가 올바르지 않아요. 사이트 관리자에게 알려 주세요. (인증 오류)'
   else if (failure.status === 403 || failure.code === '42501') reason = '방명록 접근 권한이 설정되지 않았어요. 사이트 관리자에게 알려 주세요. (권한 오류)'
+  else if (failure.status === 401 || failure.code === 'PGRST301' || failure.code === 'PGRST303') reason = '방명록 연결 키가 올바르지 않아요. 사이트 관리자에게 알려 주세요. (인증 오류)'
   else if (failure.code === 'PGRST205' || failure.code === '42P01') reason = '방명록 테이블이 준비되지 않았어요. 사이트 관리자에게 알려 주세요. (테이블 오류)'
   else if (failure.code === 'PGRST204' || failure.code === '42703') reason = '방명록 데이터 구조를 확인해야 해요. 사이트 관리자에게 알려 주세요. (설정 오류)'
   else if (failure.code === '23514' || failure.code === '23502') reason = '이름은 1~30자, 내용은 1~500자로 입력해 주세요.'
