@@ -8,7 +8,7 @@ for(const [,path] of html.matchAll(/(?:src|href)="([^"]+)"/g)){
   assert(path.startsWith(base),`Wrong deployment path: ${path}`)
   assert((await stat(join('dist',path.slice(base.length)))).isFile(),`Missing ${path}`)
 }
-for(const path of ['logo.webp','lemons/lemon.png','travel/105_1245.JPG',
+for(const path of ['logo.webp','lemons/lemon.png','fire.jpeg',
   ...[1,2,3,4].map(n=>`balloon/${n}.png`),
   ...['a','s','d','z','x','c'].map(n=>`sounds/${n}.mp3`),
   ...['face_landmarker.task','hand_landmarker.task','pose_landmarker_lite.task','selfie_multiclass.tflite'].map(n=>`mediapipe/models/${n}`),
