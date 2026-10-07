@@ -1,0 +1,41 @@
+#app[data-active-example="guestbook"] .topbar,
+#app[data-active-example="guestbook"] .global-capture-button,
+#app[data-active-example="guestbook"] .global-capture-status,
+#app[data-active-example="guestbook"] .global-capture-video { display:none }
+.guestbook-page { height:100%; overflow-y:auto; background:#fafaf8; color:#20201e; overscroll-behavior:contain }
+.guestbook-page [hidden] { display:none!important }
+.guestbook-header { height:76px; padding:0 5%; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #e8e8e1 }
+.guestbook-header a { color:inherit; text-decoration:none; font-size:13px; padding:12px 0 }
+.guestbook-header > span,.guestbook-eyebrow { font-size:10px; letter-spacing:.18em; color:#72726a }
+.guestbook-content { max-width:1440px; margin:auto; padding:48px 5% 80px }
+.guestbook-intro > p { color:#77776e; font-size:13px; line-height:1.8 }
+.guestbook-intro h1 { font-size:clamp(32px,4vw,56px); line-height:1.2; font-weight:600; letter-spacing:-.065em; margin:18px 0 }
+.guestbook-layout { display:grid; grid-template-columns:300px minmax(0,1fr); align-items:start; gap:48px; margin-top:40px }
+.guestbook-form { position:sticky; top:24px; padding:26px; border:1px solid #e5e5dc; background:#fff; border-radius:4px }
+.guestbook-form label { display:block; margin:24px 0 9px; font-size:12px; font-weight:600 }
+.guestbook-form input,.guestbook-form textarea { display:block; width:100%; border:0; border-bottom:1px solid #d8d8d0; border-radius:0; background:#fafaf8; padding:12px; font:inherit; font-size:13px; line-height:1.7; color:#20201e }
+.guestbook-form textarea { resize:vertical; min-height:160px; max-height:400px }
+.guestbook-form input::placeholder,.guestbook-form textarea::placeholder { color:#85857c }
+.guestbook-form-meta { display:flex; flex-wrap:wrap; gap:6px; justify-content:space-between; margin:12px 0 22px; color:#78786f; font-size:10px; line-height:1.6 }
+.guestbook-form-meta small { font-size:inherit }
+.guestbook-form button { width:100%; border:0; background:#252521; color:white; padding:14px; border-radius:2px; cursor:pointer; font-size:13px }
+.guestbook-page button:disabled { opacity:.5; cursor:wait }
+.guestbook-page :is(a,button,input,textarea):focus-visible { outline:2px solid #707747; outline-offset:4px }
+.guestbook-status { font-size:12px; line-height:1.8; color:#69695e; overflow-wrap:anywhere }
+.guestbook-status:empty { display:none }
+.guestbook-board-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:24px }
+.guestbook-board-heading h2 { font-size:14px; font-weight:500; margin:0 }
+#guestbook-live { font-size:10px; color:#72785b }
+.guestbook-notes { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:26px; padding:8px 5px 25px }
+.guestbook-note { position:relative; min-height:230px; padding:30px 24px 22px; display:flex; flex-direction:column; background:#f5edac; transform:rotate(var(--note-rotation)); box-shadow:2px 6px 9px #38351c16,0 1px 2px #38351c12; overflow-wrap:anywhere }
+.guestbook-note::before { content:''; position:absolute; width:70px; height:22px; background:#ffffff65; top:-9px; left:calc(50% - 35px); transform:rotate(-3deg); border:1px solid #ffffff42 }
+.guestbook-note[data-color="1"] { background:#f5d9df }.guestbook-note[data-color="2"] { background:#dce9d2 }.guestbook-note[data-color="3"] { background:#d9e8ee }.guestbook-note[data-color="4"] { background:#e5ddf1 }
+.guestbook-note > p { white-space:pre-wrap; font-size:15px; line-height:1.85; margin:0 0 30px }
+.guestbook-note footer { display:flex; flex-direction:column; gap:8px; margin-top:auto }
+.guestbook-note strong { font-size:12px; font-weight:600 }.guestbook-note time { font-size:10px; color:#666557 }
+.guestbook-note.is-new { animation:guestbook-stick .55s cubic-bezier(.2,.8,.2,1) both }
+.guestbook-retry,.guestbook-more { padding:10px 16px; background:transparent; border:1px solid #ccc; border-radius:3px; color:#444; font-size:12px; cursor:pointer; margin-bottom:20px }
+@keyframes guestbook-stick { from { opacity:0; transform:translateY(-24px) rotate(-6deg) scale(1.06) } to { opacity:1; transform:translateY(0) rotate(var(--note-rotation)) scale(1) } }
+@media(max-width:850px) { .guestbook-layout { grid-template-columns:250px minmax(0,1fr); gap:28px }.guestbook-notes { grid-template-columns:1fr } }
+@media(max-width:600px) { .guestbook-content { padding-top:24px }.guestbook-layout { grid-template-columns:1fr; gap:36px; margin-top:28px }.guestbook-form { position:static }.guestbook-notes { grid-template-columns:repeat(auto-fill,minmax(230px,1fr)) }.guestbook-header { height:64px } }
+@media(prefers-reduced-motion:reduce) { .guestbook-note.is-new { animation:none } }

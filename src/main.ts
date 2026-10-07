@@ -4,7 +4,7 @@ import { moneyTemplate } from './money-template'
 import { afterglowTemplate } from './afterglow'
 import { setupCaptureControl } from './capture-control.ts'
 
-type ExampleName = 'home' | 'space' | 'typing' | 'claw' | 'sampler' | 'hand' | 'water' | 'balloon' | 'lab' | 'rubber' | 'shampoo' | 'doodle' | 'travel' | 'aquarium' | 'sniper' | 'earth' | 'body-fx' | 'money' | 'afterglow' | 'fireworks'
+type ExampleName = 'guestbook' | 'home' | 'space' | 'typing' | 'claw' | 'sampler' | 'hand' | 'water' | 'balloon' | 'lab' | 'rubber' | 'shampoo' | 'doodle' | 'travel' | 'aquarium' | 'sniper' | 'earth' | 'body-fx' | 'money' | 'afterglow' | 'fireworks'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 
@@ -45,6 +45,7 @@ function releaseCurrentExample() {
 }
 
 const exampleTemplates: Record<ExampleName, () => string> = {
+  guestbook: () => '<main class="guestbook-page" aria-label="방명록"></main>',
   home: () => '<main class="example-gallery" aria-label="인터랙션 플레이그라운드"></main>',
   'body-fx': () => bodyTemplate(),
   money: () => moneyTemplate(),
@@ -556,7 +557,7 @@ async function showExample(name: ExampleName) {
   const request = ++exampleRequest
   const isCurrent = () => request === exampleRequest
   releaseCurrentExample()
-  if (name !== 'home' && name !== 'money' && name !== 'fireworks' && name !== 'doodle') disposeCaptureControl = setupCaptureControl(app)
+  if (name !== 'guestbook' && name !== 'home' && name !== 'money' && name !== 'fireworks' && name !== 'doodle') disposeCaptureControl = setupCaptureControl(app)
   stage.innerHTML = exampleTemplates[name]()
   stage.dataset.activeExample = name
   app.dataset.activeExample = name
@@ -576,6 +577,10 @@ async function showExample(name: ExampleName) {
     if (isCurrent()) disposeMountedExample = setupExampleGallery(stage.querySelector<HTMLElement>('.example-gallery')!, (selected) => {
       if (Object.hasOwn(exampleTemplates, selected)) void showExample(selected as ExampleName)
     })
+  }
+  if (name === 'guestbook') {
+    const { setupGuestbook } = await import('./guestbook.ts')
+    if (isCurrent()) disposeMountedExample = setupGuestbook(stage.querySelector<HTMLElement>('.guestbook-page')!)
   }
   if (name === 'space') disposeMountedExample = await mountSpaceExample(isCurrent)
   if (name === 'typing') disposeMountedExample = await mountTypingGame(isCurrent)

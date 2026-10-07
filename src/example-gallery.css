@@ -18,3 +18,8 @@
 .clock-number span {-webkit-text-stroke-width:var(--outline,1px)}
 @media(hover:hover) and (pointer:fine){.example-gallery,.example-gallery button{cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='6' fill='black'/%3E%3C/svg%3E") 12 12,pointer}}
 @media(prefers-reduced-motion:reduce){.clock-number,.clock-number span,.gallery-open{transition:none}}
+
+.gallery-heading {justify-content:space-between}
+.gallery-guestbook {color:#111;text-decoration:none;font-size:12px;border:1px solid #ddd;border-radius:999px;padding:10px 18px;touch-action:manipulation}
+.gallery-guestbook:hover {background:#f5f5f5}
+.gallery-guestbook:focus-visible {outline:2px solid #111;outline-offset:4px}
