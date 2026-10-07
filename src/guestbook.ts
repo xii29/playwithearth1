@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import './guestbook.css'
+import { guestbookRequest, guestbookErrorMessage } from './guestbook-request'
 
 type Entry = { id: string; name: string; message: string; created_at: string }
 const fields = 'id,name,message,created_at'
@@ -21,7 +22,7 @@ export function setupGuestbook(root: HTMLElement) {
         <section class="guestbook-board" aria-labelledby="guestbook-board-title">
           <div class="guestbook-board-heading"><h2 id="guestbook-board-title">남겨진 마음들</h2><span id="guestbook-live" role="status">연결 중</span></div>
           <p class="guestbook-status" id="guestbook-load-status" role="status">방명록을 불러오는 중이에요.</p>
-          <button class="guestbook-retry" type="button" hidden>다시 불러오기</button>
+          <button class="guestbook-refresh" type="button">목록 새로고침</button><button class="guestbook-retry" type="button" hidden>다시 불러오기</button>
           <div class="guestbook-notes" role="list" aria-label="방명록 목록"></div>
           <button class="guestbook-more" type="button" hidden>이전 방명록 더 보기</button>
         </section>
@@ -36,6 +37,7 @@ export function setupGuestbook(root: HTMLElement) {
   const live = root.querySelector<HTMLElement>('#guestbook-live')!
   const notes = root.querySelector<HTMLElement>('.guestbook-notes')!
   const retry = root.querySelector<HTMLButtonElement>('.guestbook-retry')!
+  const refreshButton = root.querySelector<HTMLButtonElement>('.guestbook-refresh')!
   const more = root.querySelector<HTMLButtonElement>('.guestbook-more')!
   const length = root.querySelector<HTMLElement>('#guestbook-length')!
   const events = new AbortController()
@@ -53,6 +55,7 @@ export function setupGuestbook(root: HTMLElement) {
   try { validUrl = new URL(url).protocol === 'https:' } catch { /* missing configuration */ }
   if (!validUrl || !publicKey) {
     submit.disabled = true
+    refreshButton.disabled = true
     live.textContent = '준비 중'
     loadStatus.textContent = '방명록 연결을 준비하고 있어요. 잠시 후 다시 방문해 주세요.'
     submitStatus.textContent = '연결 설정이 완료되면 작성할 수 있어요.'
@@ -91,13 +94,12 @@ export function setupGuestbook(root: HTMLElement) {
 
   async function load(older = false) {
     if (disposed || loading) return
-    loading = true; retry.hidden = true; more.disabled = true
+    loading = true; retry.hidden = true; more.disabled = true; refreshButton.disabled = true
     try {
       let query = client.from('guestbook_entries').select(fields).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(pageSize)
       if (older && cursor) query = query.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`)
-      const { data, error } = await query.abortSignal(signal)
+      const data = await guestbookRequest(requestSignal => query.abortSignal(requestSignal).retry(false), signal)
       if (disposed) return
-      if (error) throw error
       for (const entry of data as Entry[]) add(entry)
       if (older || !cursor) {
         cursor = data.at(-1) as Entry | undefined
@@ -106,15 +108,16 @@ export function setupGuestbook(root: HTMLElement) {
       loadStatus.textContent = entries.size ? '' : '아직 남겨진 메모가 없어요. 첫 번째 포스트잇을 붙여 주세요!'
       if (!entries.size) loadStatus.dataset.empty = 'true'
       else delete loadStatus.dataset.empty
-    } catch {
+    } catch (error) {
       if (!disposed) {
         delete loadStatus.dataset.empty
-        loadStatus.textContent = '방명록을 불러오지 못했어요. 연결을 확인하고 다시 시도해 주세요.'
+        loadStatus.textContent = guestbookErrorMessage(error, false)
         retry.hidden = false
         retry.dataset.older = String(older)
       }
-    } finally { loading = false; more.disabled = false }
+    } finally { loading = false; more.disabled = false; refreshButton.disabled = false }
   }
+  refreshButton.addEventListener('click', () => { void load() }, { signal })
   retry.addEventListener('click', () => { void load(retry.dataset.older === 'true') }, { signal })
   more.addEventListener('click', () => { void load(true) }, { signal })
   form.addEventListener('submit', async event => {
@@ -127,22 +130,26 @@ export function setupGuestbook(root: HTMLElement) {
       return
     }
     saving = true; submit.disabled = true; name.readOnly = true; message.readOnly = true
+    submit.setAttribute('aria-busy', 'true')
     submit.textContent = '붙이는 중…'; submitStatus.textContent = ''
     try {
-      // Do not abort a write on navigation: the server may already have committed it.
-      const { data, error } = await client.from('guestbook_entries').insert(values).select(fields).single()
+      // A timeout can occur after commit. Never automatically retry a write.
+      const data = await guestbookRequest(requestSignal => client.from('guestbook_entries')
+        .insert(values).select(fields).abortSignal(requestSignal).single().retry(false), signal)
       if (disposed) return
-      if (error) throw error
       add(data as Entry, true)
       message.value = ''; length.textContent = '0 / 500'
       submitStatus.textContent = '포스트잇을 붙였어요!'
       message.focus({ preventScroll: true })
       cards.get(data.id)?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
-    } catch {
-      if (!disposed) submitStatus.textContent = '저장 결과를 확인하지 못했어요. 입력 내용은 남겨 두었어요. 목록을 확인한 뒤 다시 시도해 주세요.'
+    } catch (error) {
+      if (!disposed) {
+        submitStatus.textContent = guestbookErrorMessage(error, true)
+        void load()
+      }
     } finally {
       saving = false
-      if (!disposed) { submit.disabled = false; name.readOnly = false; message.readOnly = false; submit.textContent = '작성하기' }
+      if (!disposed) { submit.removeAttribute('aria-busy'); submit.disabled = false; name.readOnly = false; message.readOnly = false; submit.textContent = '작성하기' }
     }
   }, { signal })
 

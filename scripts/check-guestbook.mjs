@@ -22,6 +22,7 @@ try {
     if (route.request().method() === 'POST') {
       writes++
       await new Promise(resolve => setTimeout(resolve, 100))
+      if (failWrite === 'hang') return
       if (failWrite) return route.fulfill({ status: 403, json: { message: 'denied' } })
       const row = { ...route.request().postDataJSON(), id: '00000000-0000-4000-8000-999999999999', created_at: '2026-10-07T10:00:00.000Z' }
       rows.unshift(row)
@@ -72,6 +73,12 @@ try {
   await page.waitForFunction(() => document.querySelector('#guestbook-submit-status').textContent.includes('저장 결과'))
   assert.equal(await page.locator('#guestbook-message').inputValue(), '인사')
   assert.equal(await page.locator('.guestbook-note').count(), 51)
+  failWrite = 'hang'
+  await page.locator('button[type=submit]').click()
+  await page.waitForFunction(() => document.querySelector('#guestbook-submit-status').textContent.includes('서버 응답이 늦어'), { timeout: 16000 })
+  assert.equal(await page.locator('#guestbook-message').inputValue(), '인사', 'Timed-out save preserves draft')
+  assert.equal(await page.locator('button[type=submit]').isDisabled(), false, 'Timed-out save releases button')
+  assert.equal(await page.locator('#guestbook-message').evaluate(el => el.readOnly), false, 'Timed-out save releases input')
   failWrite = false
   await page.locator('button[type=submit]').click()
   await page.waitForFunction(() => document.querySelector('#guestbook-submit-status').textContent.includes('붙였어요'))

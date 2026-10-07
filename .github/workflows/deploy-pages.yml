@@ -25,11 +25,14 @@ jobs:
         id: pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - run: npm ci
-      - run: npm run build
+      - name: Validate guestbook configuration and build
+        run: |
+          node scripts/check-guestbook-config.mjs
+          npm run build
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}/
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Check deployment files
         run: node scripts/check-pages.mjs
         env:

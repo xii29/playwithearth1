@@ -58,7 +58,7 @@ npm run dev
 | `VITE_SUPABASE_URL` | 2단계의 Project URL |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | 2단계의 Publishable key 또는 legacy anon 키 |
 
-현재 워크플로는 `vars`를 읽으므로 **Repository variables**에 등록해야 합니다. Secrets 탭에만 넣으면 읽히지 않습니다. [GitHub 변수 안내](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-variables)
+현재 워크플로는 **Repository variables**를 우선 읽고, 없으면 같은 이름의 **Repository secrets**를 읽습니다. 두 곳에 중복 등록했다면 Variables 값이 우선이므로 오래된 값은 수정하거나 제거하세요. URL 또는 공개 키가 누락되거나 형식이 잘못되면 빌드 전에 오류로 중단하여 연결되지 않는 사이트의 배포를 방지합니다. [GitHub 변수 안내](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-variables)
 
 ## 5. 변경 코드 배포하기
 
@@ -78,7 +78,7 @@ npm run dev
 5. 시크릿 창 또는 다른 기기에서도 방명록을 열고 한쪽에서 글을 작성합니다. 다른 쪽에서도 자동으로 포스트잇이 생겨야 합니다.
 6. Supabase **Table Editor → guestbook_entries**에 같은 내용이 저장되었는지 확인합니다.
 
-최근 50개부터 표시하며 **이전 방명록 더 보기**로 과거 글을 가져옵니다. 실시간 연결이 끊기면 재접속을 시도하고, 화면이 활성화된 동안 30초 간격으로 최신 글을 다시 조회합니다. 네트워크 오류 시 작성 내용을 유지하며, 저장 응답을 확인하지 못한 경우에는 중복 작성 전에 목록을 확인하도록 안내합니다.
+최근 50개부터 표시하며 **이전 방명록 더 보기**로 과거 글을 가져옵니다. 실시간 연결이 끊기면 재접속을 시도하고, 화면이 활성화된 동안 30초 간격으로 최신 글을 다시 조회합니다. 조회·저장 요청은 최대 12초까지 기다린 뒤 중단하고 버튼과 입력을 복구합니다. 저장은 자동 재전송하지 않습니다. 네트워크 오류 시 작성 내용을 유지하며, 저장 응답을 확인하지 못한 경우에는 중복 작성 전에 목록을 확인하도록 안내합니다.
 
 ## 문제 해결
 
@@ -88,7 +88,7 @@ npm run dev
 | “방명록을 불러오지 못했어요” | Supabase 프로젝트 실행 상태, URL·키, SQL 실행 성공, Data API 활성화 확인 |
 | 조회는 되지만 저장 실패 | SQL의 INSERT 정책과 컬럼 권한 적용 여부 확인. 이름 30자·메시지 500자 제한 확인 |
 | 다른 창의 글이 즉시 나타나지 않음 | Database의 Publications에서 `supabase_realtime`에 `guestbook_entries`가 포함되는지 확인. SQL 재실행 가능. 네트워크의 WebSocket 차단 여부 확인 |
-| 변수 등록 후에도 준비 중 | Variables 탭의 repository 변수인지 확인하고 Actions 새 빌드 후 강력 새로고침 |
+| 변수 등록 후에도 준비 중 | Repository variables 또는 secrets의 이름을 확인하고 Actions 새 빌드 후 강력 새로고침 |
 | 원치 않는 글 삭제 | Supabase Table Editor에서 관리자가 해당 행을 직접 삭제. 이미 열린 화면에는 새로고침 후 반영 |
 
 로그인 없는 공개 방명록이므로 누구나 이름을 정해 작성할 수 있고 작성자 인증·서버 측 스팸 방지는 포함하지 않습니다. 글은 공개되며 이름/내용/작성 시각만 저장합니다. 현재 단계에서 실제 Supabase 프로젝트 연결, 데이터 저장, RLS 실행 결과는 위 설정 후 확인해야 합니다.

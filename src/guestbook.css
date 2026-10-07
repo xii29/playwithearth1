@@ -19,7 +19,8 @@
 .guestbook-form-meta { display:flex; flex-wrap:wrap; gap:6px; justify-content:space-between; margin:12px 0 22px; color:#78786f; font-size:10px; line-height:1.6 }
 .guestbook-form-meta small { font-size:inherit }
 .guestbook-form button { width:100%; border:0; background:#252521; color:white; padding:14px; border-radius:2px; cursor:pointer; font-size:13px }
-.guestbook-page button:disabled { opacity:.5; cursor:wait }
+.guestbook-page button:disabled { opacity:.5; cursor:not-allowed }
+.guestbook-page button[aria-busy="true"] { cursor:wait }
 .guestbook-page :is(a,button,input,textarea):focus-visible { outline:2px solid #707747; outline-offset:4px }
 .guestbook-status { font-size:12px; line-height:1.8; color:#69695e; overflow-wrap:anywhere }
 .guestbook-status:empty { display:none }
@@ -34,7 +35,7 @@
 .guestbook-note footer { display:flex; flex-direction:column; gap:8px; margin-top:auto }
 .guestbook-note strong { font-size:12px; font-weight:600 }.guestbook-note time { font-size:10px; color:#666557 }
 .guestbook-note.is-new { animation:guestbook-stick .55s cubic-bezier(.2,.8,.2,1) both }
-.guestbook-retry,.guestbook-more { padding:10px 16px; background:transparent; border:1px solid #ccc; border-radius:3px; color:#444; font-size:12px; cursor:pointer; margin-bottom:20px }
+.guestbook-refresh,.guestbook-retry,.guestbook-more { padding:10px 16px; background:transparent; border:1px solid #ccc; border-radius:3px; color:#444; font-size:12px; cursor:pointer; margin:0 8px 20px 0 }
 @keyframes guestbook-stick { from { opacity:0; transform:translateY(-24px) rotate(-6deg) scale(1.06) } to { opacity:1; transform:translateY(0) rotate(var(--note-rotation)) scale(1) } }
 @media(max-width:850px) { .guestbook-layout { grid-template-columns:250px minmax(0,1fr); gap:28px }.guestbook-notes { grid-template-columns:1fr } }
 @media(max-width:600px) { .guestbook-content { padding-top:24px }.guestbook-layout { grid-template-columns:1fr; gap:36px; margin-top:28px }.guestbook-form { position:static }.guestbook-notes { grid-template-columns:repeat(auto-fill,minmax(230px,1fr)) }.guestbook-header { height:64px } }
